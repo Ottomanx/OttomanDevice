@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import sys
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ottomandevice.logging import get_logger
@@ -8,6 +10,7 @@ from ottomandevice.logging import get_logger
 logger = get_logger("remote_desktop.clipboard_sync")
 
 MAX_CLIPBOARD_TEXT_LENGTH = 262_144
+CLIPBOARD_POLL_INTERVAL_MS = 300
 CF_UNICODETEXT = 13
 
 
@@ -86,3 +89,54 @@ class ClipboardManager:
                 raise OSError("Failed to set clipboard data")
         finally:
             user32.CloseClipboard()
+
+
+class ClipboardPoller:
+    def __init__(
+        self,
+        clipboard_manager: ClipboardManager,
+        *,
+        poll_interval_ms: int = CLIPBOARD_POLL_INTERVAL_MS,
+    ) -> None:
+        self._clipboard_manager = clipboard_manager
+        self._poll_interval_s = poll_interval_ms / 1000.0
+        self._last_text: str | None = None
+
+    @property
+    def poll_interval_ms(self) -> int:
+        return int(self._poll_interval_s * 1000)
+
+    def note_text(self, text: str) -> None:
+        self._last_text = text
+
+    def reset(self) -> None:
+        self._last_text = None
+
+    async def run(
+        self,
+        *,
+        send_changed: Callable[[str], Awaitable[None]],
+        should_poll: Callable[[], bool],
+        shutdown_event: asyncio.Event,
+    ) -> None:
+        while not shutdown_event.is_set():
+            if not should_poll():
+                self.reset()
+                await asyncio.sleep(self._poll_interval_s)
+                continue
+
+            try:
+                text = await asyncio.to_thread(self._clipboard_manager.read)
+            except Exception:
+                logger.info("Clipboard read failed")
+                await asyncio.sleep(self._poll_interval_s)
+                continue
+
+            if text != self._last_text:
+                self._last_text = text
+                try:
+                    await send_changed(text)
+                except Exception:
+                    logger.info("Clipboard changed broadcast failed")
+
+            await asyncio.sleep(self._poll_interval_s)

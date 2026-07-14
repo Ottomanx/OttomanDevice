@@ -23,6 +23,7 @@ from ottomandevice.remote_desktop.auth import (
 )
 from ottomandevice.remote_desktop.clipboard_sync import (
     ClipboardManager,
+    ClipboardPoller,
     parse_clipboard_text,
 )
 from ottomandevice.remote_desktop.file_transfer import (
@@ -273,11 +274,22 @@ class RemoteDesktopWebSocketServer:
             capture_engine=self._capture_engine,
             settings=self._settings,
         )
+        clipboard_poller = ClipboardPoller(
+            self._clipboard_manager,
+            poll_interval_ms=self._settings.clipboard_poll_interval_ms,
+        )
         clipboard_watch_task = asyncio.create_task(
-            self._clipboard_watch_loop(
-                send_message=send_message,
-                session=session,
-                stream_runner=stream_runner,
+            clipboard_poller.run(
+                send_changed=lambda text: send_message(
+                    "CLIPBOARD_CHANGED",
+                    payload={"text": text},
+                ),
+                should_poll=lambda: (
+                    stream_runner.is_running
+                    and clipboard_control_active
+                    and has_permission(session.permissions, Permission.CLIPBOARD)
+                ),
+                shutdown_event=self._shutdown_event,
             )
         )
         mouse_control_active = False
@@ -428,6 +440,7 @@ class RemoteDesktopWebSocketServer:
                         session,
                         stream_runner,
                         clipboard_control_active,
+                        clipboard_poller,
                     )
                 elif msg_type == "FILE_UPLOAD":
                     await self._handle_file_upload(
@@ -847,32 +860,6 @@ class RemoteDesktopWebSocketServer:
         except Exception:
             keyboard_logger.info("Invalid keyboard event")
 
-    async def _clipboard_watch_loop(
-        self,
-        *,
-        send_message: Any,
-        session: RemoteDesktopSession,
-        stream_runner: DesktopStreamRunner,
-    ) -> None:
-        last_text: str | None = None
-        while not self._shutdown_event.is_set():
-            await asyncio.sleep(1.0)
-            if not stream_runner.is_running:
-                last_text = None
-                continue
-            if not has_permission(session.permissions, Permission.CLIPBOARD):
-                continue
-
-            try:
-                text = await asyncio.to_thread(self._clipboard_manager.read)
-            except Exception:
-                clipboard_logger.info("Clipboard read failed")
-                continue
-
-            if text != last_text:
-                last_text = text
-                await send_message("CLIPBOARD_CHANGED", payload={"text": text})
-
     async def _handle_clipboard_get(
         self,
         send_message: Any,
@@ -900,6 +887,7 @@ class RemoteDesktopWebSocketServer:
         session: RemoteDesktopSession,
         stream_runner: DesktopStreamRunner,
         clipboard_control_active: bool,
+        clipboard_poller: ClipboardPoller,
     ) -> None:
         if not stream_runner.is_running or not clipboard_control_active:
             return
@@ -922,7 +910,11 @@ class RemoteDesktopWebSocketServer:
             clipboard_logger.info("Invalid clipboard event")
             return
 
-        await send_message("CLIPBOARD_CHANGED", payload={"text": text})
+        clipboard_poller.note_text(text)
+        try:
+            await send_message("CLIPBOARD_CHANGED", payload={"text": text})
+        except Exception:
+            clipboard_logger.info("Clipboard changed broadcast failed")
 
     async def _send_file_error(
         self,

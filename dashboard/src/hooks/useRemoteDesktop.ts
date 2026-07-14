@@ -11,6 +11,14 @@ import {
 } from '../services/remoteDesktopSession'
 import { MouseMoveThrottler } from '../utils/remoteMouseControl'
 import {
+  ClipboardNotificationThrottler,
+  applyRemoteClipboardLocally,
+  clipboardTextHash,
+  readLocalClipboardText,
+  shouldSyncClipboardText,
+  validateClipboardText,
+} from '../utils/remoteClipboardSync'
+import {
   assembleDownloadChunks,
   createTransferId,
   readFileInChunks,
@@ -76,8 +84,12 @@ interface UseRemoteDesktopResult {
   isControlledByOther: boolean
   releaseSession: () => void
   remoteClipboardText: string | null
+  clipboardNotification: string | null
   copyToRemote: () => Promise<void>
   copyFromRemote: () => Promise<void>
+  pushLocalClipboardToRemote: () => Promise<void>
+  pasteRemoteClipboardLocally: () => Promise<void>
+  clearClipboardNotification: () => void
   fileTransferProgress: FileTransferProgress | null
   uploadFile: (relativePath: string, file: File) => Promise<void>
   downloadFile: (relativePath: string) => Promise<void>
@@ -187,6 +199,7 @@ export function useRemoteDesktop(
   const [activeSessionInfo, setActiveSessionInfo] = useState<ActiveSessionInfo | null>(null)
   const [isControlledByOther, setIsControlledByOther] = useState(false)
   const [remoteClipboardText, setRemoteClipboardText] = useState<string | null>(null)
+  const [clipboardNotification, setClipboardNotification] = useState<string | null>(null)
   const [fileTransferProgress, setFileTransferProgress] = useState<FileTransferProgress | null>(
     null,
   )
@@ -203,6 +216,9 @@ export function useRemoteDesktop(
   const [reconnectCount, setReconnectCount] = useState(0)
   const recordIncomingFrameRef = useRef<(payload: Record<string, unknown>) => boolean>(() => true)
   const mouseMoveThrottlerRef = useRef(new MouseMoveThrottler())
+  const clipboardNotificationThrottlerRef = useRef(new ClipboardNotificationThrottler())
+  const clipboardLastRemoteHashRef = useRef<string | null>(null)
+  const clipboardLastSentHashRef = useRef<string | null>(null)
 
   deviceIdRef.current = deviceId
 
@@ -320,6 +336,64 @@ export function useRemoteDesktop(
     [remoteControlActive, sendMessage],
   )
 
+  const notifyClipboardIssue = useCallback((message: string) => {
+    const decision = clipboardNotificationThrottlerRef.current.resolve(message)
+    setClipboardNotification(decision.message)
+  }, [])
+
+  const clearClipboardNotification = useCallback(() => {
+    clipboardNotificationThrottlerRef.current.reset()
+    setClipboardNotification(null)
+  }, [])
+
+  const applyRemoteClipboardChange = useCallback(
+    async (text: string) => {
+      if (!validateClipboardText(text)) {
+        return
+      }
+
+      if (!shouldSyncClipboardText(clipboardLastRemoteHashRef.current, text)) {
+        setRemoteClipboardText(text)
+        return
+      }
+
+      clipboardLastRemoteHashRef.current = clipboardTextHash(text)
+      clipboardLastSentHashRef.current = clipboardTextHash(text)
+      setRemoteClipboardText(text)
+
+      try {
+        const result = await applyRemoteClipboardLocally(text)
+        if (!result.applied) {
+          notifyClipboardIssue(
+            'Clipboard sync unavailable — use Paste button to apply remote clipboard state.',
+          )
+        }
+      } catch {
+        notifyClipboardIssue(
+          'Clipboard sync unavailable — use Paste button to apply remote clipboard state.',
+        )
+      }
+    },
+    [notifyClipboardIssue],
+  )
+
+  const sendClipboardTextToRemote = useCallback(
+    (text: string) => {
+      if (!remoteControlActive || !validateClipboardText(text)) {
+        return
+      }
+
+      if (!shouldSyncClipboardText(clipboardLastSentHashRef.current, text)) {
+        return
+      }
+
+      clipboardLastSentHashRef.current = clipboardTextHash(text)
+      clipboardLastRemoteHashRef.current = clipboardTextHash(text)
+      sendMessage('CLIPBOARD_SET', { text })
+    },
+    [remoteControlActive, sendMessage],
+  )
+
   const requestRemoteClipboard = useCallback((): Promise<string> => {
     return new Promise((resolve, reject) => {
       if (!remoteControlActive) {
@@ -344,15 +418,68 @@ export function useRemoteDesktop(
       return
     }
 
-    const text = await navigator.clipboard.readText()
-    sendMessage('CLIPBOARD_SET', { text })
-  }, [remoteControlActive, sendMessage])
+    try {
+      const text = await readLocalClipboardText()
+      if (!text) {
+        notifyClipboardIssue('Clipboard read unavailable — copy locally first.')
+        return
+      }
+      sendClipboardTextToRemote(text)
+    } catch {
+      notifyClipboardIssue('Clipboard read unavailable — copy locally first.')
+    }
+  }, [notifyClipboardIssue, remoteControlActive, sendClipboardTextToRemote])
 
   const copyFromRemote = useCallback(async () => {
-    const text = await requestRemoteClipboard()
-    await navigator.clipboard.writeText(text)
-    setRemoteClipboardText(text)
-  }, [requestRemoteClipboard])
+    try {
+      const text = await requestRemoteClipboard()
+      await applyRemoteClipboardChange(text)
+    } catch {
+      notifyClipboardIssue('Failed to copy from remote clipboard.')
+    }
+  }, [applyRemoteClipboardChange, notifyClipboardIssue, requestRemoteClipboard])
+
+  const pushLocalClipboardToRemote = useCallback(async () => {
+    if (!remoteControlActive) {
+      return
+    }
+
+    try {
+      const text = await readLocalClipboardText()
+      if (!text) {
+        return
+      }
+      sendClipboardTextToRemote(text)
+    } catch {
+      notifyClipboardIssue('Clipboard read unavailable — use Copy to remote button.')
+    }
+  }, [notifyClipboardIssue, remoteControlActive, sendClipboardTextToRemote])
+
+  const pasteRemoteClipboardLocally = useCallback(async () => {
+    if (!remoteControlActive || remoteClipboardText === null) {
+      return
+    }
+
+    try {
+      const result = await applyRemoteClipboardLocally(remoteClipboardText)
+      if (!result.applied) {
+        notifyClipboardIssue(
+          'Clipboard sync unavailable — browser blocked automatic paste.',
+        )
+      } else {
+        clearClipboardNotification()
+      }
+    } catch {
+      notifyClipboardIssue(
+        'Clipboard sync unavailable — browser blocked automatic paste.',
+      )
+    }
+  }, [
+    clearClipboardNotification,
+    notifyClipboardIssue,
+    remoteClipboardText,
+    remoteControlActive,
+  ])
 
   const cancelFileTransfer = useCallback(
     (transferId: string) => {
@@ -572,12 +699,12 @@ export function useRemoteDesktop(
             clipboardRequestRef.current(text)
             clipboardRequestRef.current = null
           }
-          setRemoteClipboardText(text)
+          void applyRemoteClipboardChange(text)
           break
         }
         case 'CLIPBOARD_CHANGED': {
           const text = typeof payload.text === 'string' ? payload.text : ''
-          setRemoteClipboardText(text)
+          void applyRemoteClipboardChange(text)
           break
         }
         case 'FILE_PROGRESS': {
@@ -736,7 +863,7 @@ export function useRemoteDesktop(
           break
       }
     },
-    [enterFallback, sendMessage],
+    [applyRemoteClipboardChange, enterFallback, sendMessage],
   )
 
   const enterFallbackRef = useRef(enterFallback)
@@ -776,6 +903,10 @@ export function useRemoteDesktop(
         setActiveSessionInfo(null)
         setIsControlledByOther(false)
         setRemoteClipboardText(null)
+        clipboardNotificationThrottlerRef.current.reset()
+        clipboardLastRemoteHashRef.current = null
+        clipboardLastSentHashRef.current = null
+        setClipboardNotification(null)
         resetTransferStateRef.current()
         resetStreamMetricsRef.current()
         mouseMoveThrottlerRef.current.reset()
@@ -862,8 +993,12 @@ export function useRemoteDesktop(
     isControlledByOther,
     releaseSession,
     remoteClipboardText,
+    clipboardNotification,
     copyToRemote,
     copyFromRemote,
+    pushLocalClipboardToRemote,
+    pasteRemoteClipboardLocally,
+    clearClipboardNotification,
     fileTransferProgress,
     uploadFile,
     downloadFile,

@@ -47,6 +47,7 @@ def _test_remote_desktop_settings() -> RemoteDesktopSettings:
         fps=10,
         jpeg_quality=70,
         width=128,
+        clipboard_poll_interval_ms=300,
         file_transfer=FileTransferSettings(
             workspace_dir="data/test-workspace",
             max_file_size_bytes=104857600,

@@ -94,6 +94,7 @@ class RemoteDesktopSettings:
     fps: int
     jpeg_quality: int
     width: int
+    clipboard_poll_interval_ms: int
     file_transfer: FileTransferSettings
 
 
@@ -149,6 +150,10 @@ class Settings:
                 fps=remote_desktop_data["fps"],
                 jpeg_quality=remote_desktop_data["jpeg_quality"],
                 width=remote_desktop_data["width"],
+                clipboard_poll_interval_ms=remote_desktop_data.get(
+                    "clipboard_poll_interval_ms",
+                    300,
+                ),
                 file_transfer=FileTransferSettings(**file_transfer_data),
             ),
         )

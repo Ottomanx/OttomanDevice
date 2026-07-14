@@ -114,8 +114,12 @@ export function DesktopPreviewPanel({
     activeSessionInfo,
     isControlledByOther,
     releaseSession,
+    clipboardNotification,
     copyToRemote,
     copyFromRemote,
+    pushLocalClipboardToRemote,
+    pasteRemoteClipboardLocally,
+    clearClipboardNotification,
     fileTransferProgress,
     uploadFile,
     downloadFile,
@@ -185,7 +189,7 @@ export function DesktopPreviewPanel({
   const clipboardActive = remoteControlActive && clipboardControlEnabled
   const fileTransferActive = remoteControlActive && fileTransferEnabled
   const streamingInputEnabled = connectionState === 'STREAMING'
-  const [clipboardError, setClipboardError] = useState<string | null>(null)
+  const clipboardInputEnabled = streamingInputEnabled && clipboardActive
   const [mouseCaptureActive, setMouseCaptureActive] = useState(false)
   const mouseCaptureRef = useRef(false)
 
@@ -216,6 +220,18 @@ export function DesktopPreviewPanel({
       releaseMouseCapture()
     }
   }, [controlActive, releaseMouseCapture, streamingInputEnabled])
+
+  useEffect(() => {
+    if (!clipboardNotification) {
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      clearClipboardNotification()
+    }, 5000)
+
+    return () => window.clearTimeout(timerId)
+  }, [clearClipboardNotification, clipboardNotification])
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -385,26 +401,42 @@ export function DesktopPreviewPanel({
       return
     }
 
-    setClipboardError(null)
-    try {
-      await copyToRemote()
-    } catch {
-      setClipboardError('Failed to copy to remote clipboard')
-    }
-  }, [clipboardActive, copyToRemote])
+    clearClipboardNotification()
+    await copyToRemote()
+  }, [clearClipboardNotification, clipboardActive, copyToRemote])
 
   const handleCopyFromRemote = useCallback(async () => {
     if (!clipboardActive) {
       return
     }
 
-    setClipboardError(null)
-    try {
-      await copyFromRemote()
-    } catch {
-      setClipboardError('Failed to copy from remote clipboard')
+    clearClipboardNotification()
+    await copyFromRemote()
+  }, [clearClipboardNotification, clipboardActive, copyFromRemote])
+
+  const handlePasteToLocal = useCallback(async () => {
+    if (!clipboardActive) {
+      return
     }
-  }, [clipboardActive, copyFromRemote])
+
+    await pasteRemoteClipboardLocally()
+  }, [clipboardActive, pasteRemoteClipboardLocally])
+
+  const handleClipboardCopy = useCallback(() => {
+    if (!clipboardInputEnabled) {
+      return
+    }
+
+    void pushLocalClipboardToRemote()
+  }, [clipboardInputEnabled, pushLocalClipboardToRemote])
+
+  const handleClipboardCut = useCallback(() => {
+    if (!clipboardInputEnabled) {
+      return
+    }
+
+    void pushLocalClipboardToRemote()
+  }, [clipboardInputEnabled, pushLocalClipboardToRemote])
 
   const controllerDisplayName =
     activeSessionInfo?.controllerName || activeSessionInfo?.userId || 'Unknown user'
@@ -508,8 +540,15 @@ export function DesktopPreviewPanel({
           >
             Copy from remote
           </button>
-          {clipboardError && (
-            <span className="text-xs text-rose-300">{clipboardError}</span>
+          <button
+            type="button"
+            onClick={() => void handlePasteToLocal()}
+            className="rounded-lg border border-sky-700/50 bg-sky-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-sky-200 transition hover:bg-sky-500/20"
+          >
+            Paste to local
+          </button>
+          {clipboardNotification && (
+            <span className="text-xs text-amber-300">{clipboardNotification}</span>
           )}
         </div>
       )}
@@ -558,6 +597,8 @@ export function DesktopPreviewPanel({
         onContextMenu={streamingInputEnabled ? handleContextMenu : undefined}
         onKeyDown={streamingInputEnabled ? handleKeyDown : undefined}
         onKeyUp={streamingInputEnabled ? handleKeyUp : undefined}
+        onCopy={clipboardInputEnabled ? handleClipboardCopy : undefined}
+        onCut={clipboardInputEnabled ? handleClipboardCut : undefined}
       >
         {isLoading && !showWaiting && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/40 backdrop-blur-[1px]">
