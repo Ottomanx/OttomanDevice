@@ -69,6 +69,7 @@ class HeartbeatMetrics:
     application_version: str
     camera: dict[str, Any] | None = None
     audio: dict[str, Any] | None = None
+    ai: dict[str, Any] | None = None
 
     def to_cloud_record(self) -> dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class HeartbeatMetrics:
                 },
                 "camera": self.camera or {},
                 "audio": self.audio or {},
+                "ai": self.ai or {},
             },
         }
 
@@ -163,6 +165,19 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 
 
+
+
+
+def _ai_health_snapshot() -> dict[str, Any] | None:
+    try:
+        from ottomandevice.plugins.ai.manager import AIManager
+
+        manager = AIManager.get_instance_optional()
+        if manager is None:
+            return None
+        return manager.health_report()
+    except Exception:
+        return None
 
 def _audio_health_snapshot() -> dict[str, Any] | None:
     try:
@@ -305,6 +320,7 @@ class DeviceCloudManager:
             application_version=APPLICATION_VERSION,
             camera=_camera_health_snapshot(),
             audio=_audio_health_snapshot(),
+            ai=_ai_health_snapshot(),
         )
 
     def _run_async_loop(self) -> None:

@@ -554,17 +554,72 @@ class AudioError(Event):
 
 
 @dataclass(frozen=True)
+class AIProviderConnected(Event):
+    """Published when an AI provider connects successfully."""
+
+    provider: str = ""
+    model: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"provider": self.provider, "model": self.model},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "provider": self.provider, "model": self.model}
+        return data
+
+
+@dataclass(frozen=True)
+class AIProviderDisconnected(Event):
+    """Published when an AI provider disconnects or becomes unavailable."""
+
+    provider: str = ""
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"provider": self.provider, "reason": self.reason},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "provider": self.provider, "reason": self.reason}
+        return data
+
+
+@dataclass(frozen=True)
 class AIRequestStarted(Event):
     """Published when an AI inference request begins."""
 
     request_id: str = ""
+    session_id: str = ""
+    provider: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "payload", {"request_id": self.request_id})
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "session_id": self.session_id,
+                "provider": self.provider,
+            },
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
-        data["payload"] = {**data["payload"], "request_id": self.request_id}
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "session_id": self.session_id,
+            "provider": self.provider,
+        }
         return data
 
 
@@ -573,17 +628,138 @@ class AIRequestCompleted(Event):
     """Published when an AI inference request completes."""
 
     request_id: str = ""
+    session_id: str = ""
+    provider: str = ""
     duration_ms: float = 0.0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "payload", {"request_id": self.request_id, "duration_ms": self.duration_ms})
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "session_id": self.session_id,
+                "provider": self.provider,
+                "duration_ms": self.duration_ms,
+                "prompt_tokens": self.prompt_tokens,
+                "completion_tokens": self.completion_tokens,
+                "total_tokens": self.total_tokens,
+            },
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
         data["payload"] = {
             **data["payload"],
             "request_id": self.request_id,
+            "session_id": self.session_id,
+            "provider": self.provider,
             "duration_ms": self.duration_ms,
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AIRequestFailed(Event):
+    """Published when an AI inference request fails."""
+
+    request_id: str = ""
+    session_id: str = ""
+    provider: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "session_id": self.session_id,
+                "provider": self.provider,
+                "error": self.error,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "session_id": self.session_id,
+            "provider": self.provider,
+            "error": self.error,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AIResponseStreamStarted(Event):
+    """Published when a streaming AI response begins."""
+
+    request_id: str = ""
+    session_id: str = ""
+    provider: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "session_id": self.session_id,
+                "provider": self.provider,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "session_id": self.session_id,
+            "provider": self.provider,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AIResponseStreamCompleted(Event):
+    """Published when a streaming AI response completes."""
+
+    request_id: str = ""
+    session_id: str = ""
+    provider: str = ""
+    duration_ms: float = 0.0
+    total_tokens: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "session_id": self.session_id,
+                "provider": self.provider,
+                "duration_ms": self.duration_ms,
+                "total_tokens": self.total_tokens,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "session_id": self.session_id,
+            "provider": self.provider,
+            "duration_ms": self.duration_ms,
+            "total_tokens": self.total_tokens,
         }
         return data
 

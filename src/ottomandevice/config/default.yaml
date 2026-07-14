@@ -32,6 +32,15 @@ audio:
   channels: 1
   chunk_size: 1024
 
+ai:
+  enabled: true
+  provider: openai
+  fallback:
+    - gemini
+    - ollama
+  streaming: true
+  conversation_memory: 20
+
 firmware:
   version: "0.1.0"
 

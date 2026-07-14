@@ -69,6 +69,15 @@ class AudioSettings:
     chunk_size: int
 
 @dataclass(frozen=True)
+class AISettings:
+    enabled: bool
+    provider: str
+    fallback: tuple[str, ...]
+    streaming: bool
+    conversation_memory: int
+
+
+@dataclass(frozen=True)
 class FirmwareSettings:
     version: str
 
@@ -129,6 +138,7 @@ class Settings:
     desktop: DesktopSettings
     camera: CameraSettings
     audio: AudioSettings
+    ai: AISettings
     firmware: FirmwareSettings
     ota: OtaSettings
     command: CommandSettings
@@ -171,6 +181,13 @@ class Settings:
                 sample_rate=int(data.get("audio", {}).get("sample_rate", 16000)),
                 channels=int(data.get("audio", {}).get("channels", 1)),
                 chunk_size=int(data.get("audio", {}).get("chunk_size", 1024)),
+            ),
+            ai=AISettings(
+                enabled=bool(data.get("ai", {}).get("enabled", True)),
+                provider=str(data.get("ai", {}).get("provider", "openai")),
+                fallback=tuple(str(item) for item in data.get("ai", {}).get("fallback", ["gemini", "ollama"])),
+                streaming=bool(data.get("ai", {}).get("streaming", True)),
+                conversation_memory=int(data.get("ai", {}).get("conversation_memory", 20)),
             ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {
