@@ -89,6 +89,27 @@ def check_storage_bucket(supabase: Client, bucket_name: str) -> tuple[HealthStat
 
 
 def check_camera() -> tuple[HealthStatus, str, CameraInfo | None]:
+    if not settings.camera.enabled:
+        return "DISABLED", "Camera disabled in configuration", None
+
+    try:
+        from ottomandevice.plugins.camera.manager import CameraManager
+
+        manager = CameraManager.get_instance_optional()
+        if manager is not None and manager.is_open:
+            device_id = manager.active_device_id
+            snapshot = manager.health.snapshot()
+            if device_id is not None:
+                return (
+                    "PASS",
+                    f"Camera index {device_id} ({settings.camera.width}x{settings.camera.height})",
+                    CameraInfo(index=device_id, width=settings.camera.width, height=settings.camera.height),
+                )
+            if snapshot.status == "disconnected":
+                return "WARN", "Camera plugin active but disconnected", None
+    except Exception:
+        pass
+
     try:
         camera_info = CameraService().run_camera_check()
     except Exception as exc:

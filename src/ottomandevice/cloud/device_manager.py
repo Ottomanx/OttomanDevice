@@ -67,6 +67,7 @@ class HeartbeatMetrics:
     network: dict[str, int]
     runtime_version: str
     application_version: str
+    camera: dict[str, Any] | None = None
 
     def to_cloud_record(self) -> dict[str, Any]:
         return {
@@ -84,7 +85,8 @@ class HeartbeatMetrics:
                     "network": self.network,
                     "runtime_version": self.runtime_version,
                     "application_version": self.application_version,
-                }
+                },
+                "camera": self.camera or {},
             },
         }
 
@@ -155,6 +157,19 @@ def _parse_timestamp(value: str | None) -> datetime | None:
     except ValueError:
         return None
 
+
+
+
+def _camera_health_snapshot() -> dict[str, Any] | None:
+    try:
+        from ottomandevice.plugins.camera.manager import CameraManager
+
+        manager = CameraManager.get_instance_optional()
+        if manager is None:
+            return None
+        return manager.health_report()
+    except Exception:
+        return None
 
 def _disk_usage_percent() -> float:
     path = "C:\\" if platform.system() == "Windows" else "/"
@@ -273,6 +288,7 @@ class DeviceCloudManager:
             network=_network_counters(),
             runtime_version=RUNTIME_VERSION,
             application_version=APPLICATION_VERSION,
+            camera=_camera_health_snapshot(),
         )
 
     def _run_async_loop(self) -> None:

@@ -48,6 +48,11 @@ class DesktopSettings:
 
 @dataclass(frozen=True)
 class CameraSettings:
+    enabled: bool
+    device: str
+    width: int
+    height: int
+    fps: int
     windows_backend: str
     default_backend: str
     detection_range: int
@@ -139,7 +144,16 @@ class Settings:
             heartbeat=HeartbeatSettings(**data["heartbeat"]),
             telemetry=TelemetrySettings(**data["telemetry"]),
             desktop=DesktopSettings(**data["desktop"]),
-            camera=CameraSettings(**data["camera"]),
+            camera=CameraSettings(
+                enabled=bool(data["camera"].get("enabled", True)),
+                device=str(data["camera"].get("device", "auto")),
+                width=int(data["camera"].get("width", 1280)),
+                height=int(data["camera"].get("height", 720)),
+                fps=int(data["camera"].get("fps", 30)),
+                windows_backend=data["camera"]["windows_backend"],
+                default_backend=data["camera"]["default_backend"],
+                detection_range=int(data["camera"]["detection_range"]),
+            ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {
                 "check_interval": 300,

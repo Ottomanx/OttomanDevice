@@ -16,6 +16,11 @@ desktop:
   latest_frame_name: latest.jpg
 
 camera:
+  enabled: true
+  device: auto
+  width: 1280
+  height: 720
+  fps: 30
   windows_backend: CAP_DSHOW
   default_backend: CAP_ANY
   detection_range: 10

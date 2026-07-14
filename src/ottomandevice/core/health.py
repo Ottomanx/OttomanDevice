@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import socket
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 import psutil
 
@@ -51,6 +52,32 @@ class SystemHealthReport:
 class HealthMonitor:
     """Collects host-level health metrics for the runtime."""
 
+    _suppliers: list[Callable[[], tuple[tuple[MetricValue, ...], dict[str, Any]]]] = []
+    _supplier_lock = threading.Lock()
+
+    @classmethod
+    def register_supplier(
+        cls,
+        supplier: Callable[[], tuple[tuple[MetricValue, ...], dict[str, Any]]],
+    ) -> None:
+        with cls._supplier_lock:
+            if supplier not in cls._suppliers:
+                cls._suppliers.append(supplier)
+
+    @classmethod
+    def unregister_supplier(
+        cls,
+        supplier: Callable[[], tuple[tuple[MetricValue, ...], dict[str, Any]]],
+    ) -> None:
+        with cls._supplier_lock:
+            cls._suppliers = [item for item in cls._suppliers if item is not supplier]
+
+    @classmethod
+    def clear_suppliers(cls) -> None:
+        with cls._supplier_lock:
+            cls._suppliers.clear()
+
+
     def __init__(
         self,
         *,
@@ -92,6 +119,16 @@ class HealthMonitor:
         network_metrics, network_details = self._collect_network()
         metrics.extend(network_metrics)
         details.update(network_details)
+
+        with HealthMonitor._supplier_lock:
+            suppliers = list(HealthMonitor._suppliers)
+        for supplier in suppliers:
+            try:
+                supplier_metrics, supplier_details = supplier()
+            except Exception:
+                continue
+            metrics.extend(supplier_metrics)
+            details.update(supplier_details)
 
         overall_status = "warn" if any(metric.status == "warn" for metric in metrics) else "ok"
         return SystemHealthReport(

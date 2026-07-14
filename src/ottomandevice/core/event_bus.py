@@ -152,23 +152,189 @@ class HeartbeatSent(Event):
 
 
 @dataclass(frozen=True)
-class CameraOpened(Event):
-    """Published when the camera pipeline is opened."""
+class CameraDetected(Event):
+    """Published when a camera device is discovered."""
 
+    device_id: int = 0
+    width: int = 0
+    height: int = 0
     backend: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "payload", {"backend": self.backend})
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "width": self.width,
+                "height": self.height,
+                "backend": self.backend,
+            },
+        )
 
     def to_dict(self) -> dict[str, Any]:
         data = super().to_dict()
-        data["payload"] = {**data["payload"], "backend": self.backend}
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "width": self.width,
+            "height": self.height,
+            "backend": self.backend,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class CameraOpened(Event):
+    """Published when the camera pipeline is opened."""
+
+    device_id: int = 0
+    backend: str = ""
+    width: int = 0
+    height: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "backend": self.backend,
+                "width": self.width,
+                "height": self.height,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "backend": self.backend,
+            "width": self.width,
+            "height": self.height,
+        }
         return data
 
 
 @dataclass(frozen=True)
 class CameraClosed(Event):
     """Published when the camera pipeline is closed."""
+
+    device_id: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"device_id": self.device_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "device_id": self.device_id}
+        return data
+
+
+@dataclass(frozen=True)
+class CameraFrameCaptured(Event):
+    """Published when a camera frame is captured."""
+
+    device_id: int = 0
+    frame_number: int = 0
+    width: int = 0
+    height: int = 0
+    streaming: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "frame_number": self.frame_number,
+                "width": self.width,
+                "height": self.height,
+                "streaming": self.streaming,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "frame_number": self.frame_number,
+            "width": self.width,
+            "height": self.height,
+            "streaming": self.streaming,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class CameraDisconnected(Event):
+    """Published when the active camera disconnects."""
+
+    device_id: int = 0
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"device_id": self.device_id, "reason": self.reason},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "reason": self.reason,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class CameraReconnected(Event):
+    """Published when a disconnected camera reconnects."""
+
+    device_id: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"device_id": self.device_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "device_id": self.device_id}
+        return data
+
+
+@dataclass(frozen=True)
+class CameraError(Event):
+    """Published when a camera operation fails."""
+
+    device_id: int = 0
+    operation: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "operation": self.operation,
+                "error": self.error,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "operation": self.operation,
+            "error": self.error,
+        }
+        return data
 
 
 @dataclass(frozen=True)
