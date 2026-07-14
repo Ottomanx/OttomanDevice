@@ -178,7 +178,7 @@ async def test_unicode_clipboard() -> None:
             await _start_stream(websocket)
             await _drain_clipboard_changed(websocket)
             await _send_json(websocket, "CLIPBOARD_GET")
-            response = await _recv_json(websocket)
+            response = await _recv_type(websocket, "CLIPBOARD_GET")
             assert response["payload"]["text"] == unicode_text
 
             await _send_json(websocket, "CLIPBOARD_SET", {"text": unicode_text})

@@ -72,3 +72,7 @@ class CameraPlugin(BasePlugin):
 
 class AudioPlugin(BasePlugin):
     """Base class for audio pipeline plugins."""
+
+
+class SpeechPlugin(BasePlugin):
+    """Base class for speech runtime plugins."""

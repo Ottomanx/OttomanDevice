@@ -78,6 +78,17 @@ class AISettings:
 
 
 @dataclass(frozen=True)
+class SpeechSettings:
+    enabled: bool
+    stt_provider: str
+    tts_provider: str
+    stt_fallback: tuple[str, ...]
+    tts_fallback: tuple[str, ...]
+    streaming: bool
+    language: str
+
+
+@dataclass(frozen=True)
 class FirmwareSettings:
     version: str
 
@@ -139,6 +150,7 @@ class Settings:
     camera: CameraSettings
     audio: AudioSettings
     ai: AISettings
+    speech: SpeechSettings
     firmware: FirmwareSettings
     ota: OtaSettings
     command: CommandSettings
@@ -188,6 +200,15 @@ class Settings:
                 fallback=tuple(str(item) for item in data.get("ai", {}).get("fallback", ["gemini", "ollama"])),
                 streaming=bool(data.get("ai", {}).get("streaming", True)),
                 conversation_memory=int(data.get("ai", {}).get("conversation_memory", 20)),
+            ),
+            speech=SpeechSettings(
+                enabled=bool(data.get("speech", {}).get("enabled", True)),
+                stt_provider=str(data.get("speech", {}).get("stt_provider", "whisper")),
+                tts_provider=str(data.get("speech", {}).get("tts_provider", "elevenlabs")),
+                stt_fallback=tuple(str(item) for item in data.get("speech", {}).get("stt_fallback", ["azure"])),
+                tts_fallback=tuple(str(item) for item in data.get("speech", {}).get("tts_fallback", ["azure"])),
+                streaming=bool(data.get("speech", {}).get("streaming", True)),
+                language=str(data.get("speech", {}).get("language", "auto")),
             ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {

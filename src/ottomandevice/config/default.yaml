@@ -41,6 +41,17 @@ ai:
   streaming: true
   conversation_memory: 20
 
+speech:
+  enabled: true
+  stt_provider: whisper
+  tts_provider: elevenlabs
+  stt_fallback:
+    - azure
+  tts_fallback:
+    - azure
+  streaming: true
+  language: auto
+
 firmware:
   version: "0.1.0"
 

@@ -765,6 +765,195 @@ class AIResponseStreamCompleted(Event):
 
 
 @dataclass(frozen=True)
+class SpeechListeningStarted(Event):
+    """Published when speech recognition listening begins."""
+
+    provider: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"provider": self.provider})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "provider": self.provider}
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechListeningStopped(Event):
+    """Published when speech recognition listening stops."""
+
+    provider: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"provider": self.provider})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "provider": self.provider}
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechRecognized(Event):
+    """Published when speech is successfully recognized."""
+
+    request_id: str = ""
+    text: str = ""
+    provider: str = ""
+    confidence: float = 0.0
+    language: str = "auto"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "text": self.text,
+                "provider": self.provider,
+                "confidence": self.confidence,
+                "language": self.language,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "text": self.text,
+            "provider": self.provider,
+            "confidence": self.confidence,
+            "language": self.language,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechRecognitionFailed(Event):
+    """Published when speech recognition fails."""
+
+    request_id: str = ""
+    provider: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "provider": self.provider,
+                "error": self.error,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "provider": self.provider,
+            "error": self.error,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechPlaybackStarted(Event):
+    """Published when speech playback begins."""
+
+    request_id: str = ""
+    provider: str = ""
+    text_length: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "provider": self.provider,
+                "text_length": self.text_length,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "provider": self.provider,
+            "text_length": self.text_length,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechPlaybackCompleted(Event):
+    """Published when speech playback completes."""
+
+    request_id: str = ""
+    provider: str = ""
+    duration_ms: float = 0.0
+    bytes_played: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "provider": self.provider,
+                "duration_ms": self.duration_ms,
+                "bytes_played": self.bytes_played,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "provider": self.provider,
+            "duration_ms": self.duration_ms,
+            "bytes_played": self.bytes_played,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SpeechPlaybackInterrupted(Event):
+    """Published when speech playback is interrupted."""
+
+    request_id: str = ""
+    provider: str = ""
+    duration_ms: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "request_id": self.request_id,
+                "provider": self.provider,
+                "duration_ms": self.duration_ms,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "request_id": self.request_id,
+            "provider": self.provider,
+            "duration_ms": self.duration_ms,
+        }
+        return data
+
+
+@dataclass(frozen=True)
 class CloudConnected(Event):
     """Published when the cloud backend connection is established."""
 
