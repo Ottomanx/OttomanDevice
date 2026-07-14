@@ -420,6 +420,131 @@ class DeviceProfileUpdated(Event):
         return data
 
 
+
+
+@dataclass(frozen=True)
+class HeartbeatReceived(Event):
+    """Published when a heartbeat is successfully acknowledged by the cloud."""
+
+    device_uuid: str = ""
+    uptime: int = 0
+    cpu: float = 0.0
+    ram: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_uuid": self.device_uuid,
+                "uptime": self.uptime,
+                "cpu": self.cpu,
+                "ram": self.ram,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_uuid": self.device_uuid,
+            "uptime": self.uptime,
+            "cpu": self.cpu,
+            "ram": self.ram,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class RemoteCommandReceived(Event):
+    """Published when a remote command is received from the cloud."""
+
+    command_id: str = ""
+    command: str = ""
+    device_uuid: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "command_id": self.command_id,
+                "command": self.command,
+                "device_uuid": self.device_uuid,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "command_id": self.command_id,
+            "command": self.command,
+            "device_uuid": self.device_uuid,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class RemoteCommandExecuted(Event):
+    """Published when a remote command completes successfully."""
+
+    command_id: str = ""
+    command: str = ""
+    device_uuid: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "command_id": self.command_id,
+                "command": self.command,
+                "device_uuid": self.device_uuid,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "command_id": self.command_id,
+            "command": self.command,
+            "device_uuid": self.device_uuid,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class RemoteCommandFailed(Event):
+    """Published when a remote command fails to execute."""
+
+    command_id: str = ""
+    command: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "command_id": self.command_id,
+                "command": self.command,
+                "error": self.error,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "command_id": self.command_id,
+            "command": self.command,
+            "error": self.error,
+        }
+        return data
+
+
 @dataclass(frozen=True)
 class Subscription:
     """Registered event handler subscription."""

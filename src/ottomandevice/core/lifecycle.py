@@ -5,7 +5,6 @@ import os
 from dotenv import load_dotenv
 from supabase import Client
 
-from ottomandevice.command import CommandService
 from ottomandevice.core.config import ConfigManager
 from ottomandevice.core.event_bus import (
     CloudConnected,
@@ -27,7 +26,6 @@ from ottomandevice.device.registry import DeviceRegistry
 from ottomandevice.core.service import LegacyServiceAdapter
 from ottomandevice.core.supervisor import ServiceSupervisor
 from ottomandevice.desktop_stream import DesktopStreamService
-from ottomandevice.heartbeat import HeartbeatService
 from ottomandevice.ota import OtaService
 from ottomandevice.paths import PROJECT_ROOT
 from ottomandevice.remote_desktop import RemoteDesktopService
@@ -39,7 +37,6 @@ from ottomandevice.startup import (
     run_startup_health_checks,
     validate_environment,
 )
-from ottomandevice.telemetry import TelemetryService
 
 
 class Runtime:
@@ -54,7 +51,7 @@ class Runtime:
         self._supervisor = ServiceSupervisor()
         self._startup_report = HealthReport()
         self._supabase: Client | None = None
-        self._heartbeat_service: HeartbeatService | None = None
+        self._cloud_manager: DeviceCloudManager | None = None
         self._event_bus = EventBus.get_instance()
         self._plugin_manager: PluginManager | None = None
         self._device_identity: DeviceIdentity | None = None
@@ -174,19 +171,23 @@ class Runtime:
         jwt_secret = os.getenv("REMOTE_DESKTOP_JWT_SECRET", "").strip()
         ota_secret = os.getenv("OTA_SIGNING_SECRET", "").strip()
 
-        heartbeat = HeartbeatService(self._supabase)
-        command_service = CommandService(self._supabase, heartbeat_service=heartbeat)
-        telemetry_service = TelemetryService(self._supabase)
-        self._heartbeat_service = heartbeat
+        from ottomandevice.cloud.device_manager import CloudRuntimeHooks, DeviceCloudManager
 
-        self._supervisor.register(
-            LegacyServiceAdapter("heartbeat", heartbeat, required=True, restartable=True)
+        assert self._device_identity is not None
+        hooks = CloudRuntimeHooks(
+            restart_runtime=self._request_runtime_restart,
+            restart_service=self._supervisor.restart_service,
+            refresh_config=self._config.reload,
+            sync_profile=self._sync_device_profile,
+        )
+        self._cloud_manager = DeviceCloudManager(
+            self._supabase,
+            device_uuid=self._device_identity.device_uuid,
+            event_bus=self._event_bus,
+            hooks=hooks,
         )
         self._supervisor.register(
-            LegacyServiceAdapter("command", command_service, required=True, restartable=True)
-        )
-        self._supervisor.register(
-            LegacyServiceAdapter("telemetry", telemetry_service, required=True, restartable=True)
+            LegacyServiceAdapter("cloud", self._cloud_manager, required=True, restartable=True)
         )
 
         desktop_stream: DesktopStreamService | None = None
@@ -295,11 +296,11 @@ class Runtime:
             )
 
     def _block_until_shutdown(self) -> None:
-        if self._heartbeat_service is not None:
-            self._heartbeat_service.join()
+        if self._cloud_manager is not None:
+            self._cloud_manager.join()
             return
 
-        self._supervisor.join_blocking_service(lambda service: service.name == "heartbeat")
+        self._supervisor.join_blocking_service(lambda service: service.name == "cloud")
 
     def _shutdown(self) -> None:
         if self._plugin_manager is not None:

@@ -27,6 +27,10 @@ from ottomandevice.core.event_bus import (
     DeviceRegistered,
     DeviceRegistrationFailed,
     DeviceProfileUpdated,
+    HeartbeatReceived,
+    RemoteCommandReceived,
+    RemoteCommandExecuted,
+    RemoteCommandFailed,
 )
 from ottomandevice.core.exceptions import (
     ConfigurationError,
@@ -97,6 +101,10 @@ __all__ = [
     "DeviceRegistered",
     "DeviceRegistrationFailed",
     "DeviceProfileUpdated",
+    "HeartbeatReceived",
+    "RemoteCommandReceived",
+    "RemoteCommandExecuted",
+    "RemoteCommandFailed",
     "DeviceIdentityError",
     "configure_logging",
     "get_logger",
