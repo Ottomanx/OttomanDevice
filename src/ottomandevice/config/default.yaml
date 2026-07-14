@@ -34,6 +34,15 @@ ota:
 command:
   poll_interval: 5
 
+runtime:
+  log_level: INFO
+  log_dir: logs
+  max_log_bytes: 5242880
+  log_backup_count: 5
+  supervisor_restart_delay_seconds: 5.0
+  supervisor_max_restarts: 10
+  health_check_interval_seconds: 60.0
+
 remote_desktop:
   host: "127.0.0.1"
   port: 9842

@@ -42,5 +42,4 @@ def print_startup_banner(report: HealthReport) -> None:
     ]
 
     banner = "\n".join(lines)
-    print(banner)
     logger.info("Startup summary:%s", banner)

@@ -1,10 +1,14 @@
+from ottomandevice.core.config import ConfigManager
+from ottomandevice.core.logger import configure_logging, get_logger
 from ottomandevice.runtime import Device
-from ottomandevice.logging import get_logger
-
-logger = get_logger("main")
 
 
 def main() -> None:
+    """Legacy entry point that reports local device metadata."""
+    ConfigManager.get_instance().load()
+    configure_logging()
+    logger = get_logger("main")
+
     device = Device()
 
     logger.info("-----------------------------------")
