@@ -6,6 +6,12 @@ from typing import Any
 
 from ottomandevice.core.exceptions import ExceptionManager, ServiceError
 from ottomandevice.core.logger import get_logger
+from ottomandevice.core.event_bus import (
+    EventBus,
+    ServiceFailed,
+    ServiceStarted,
+    ServiceStopped,
+)
 from ottomandevice.core.performance import PerformanceMonitor
 
 
@@ -28,6 +34,7 @@ class BaseService(ABC):
         *,
         required: bool = False,
         restartable: bool = True,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._name = name
         self._required = required
@@ -36,6 +43,7 @@ class BaseService(ABC):
         self._logger = get_logger(f"service.{name}")
         self._exceptions = ExceptionManager.get_instance()
         self._performance = PerformanceMonitor.get_instance()
+        self._event_bus = event_bus or EventBus.get_instance()
 
     @property
     def name(self) -> str:
@@ -70,10 +78,18 @@ class BaseService(ABC):
             self._state = ServiceState.FAILED
             self._exceptions.report(exc, service=self._name, context="start")
             self._logger.exception("Service failed to start")
+            self._event_bus.publish(
+                ServiceFailed(
+                    service_name=self._name,
+                    error=str(exc),
+                    context="start",
+                )
+            )
             raise ServiceError(f"{self._name} failed to start") from exc
 
         self._state = ServiceState.RUNNING
         self._logger.info("Service started")
+        self._event_bus.publish(ServiceStarted(service_name=self._name))
 
     def stop(self) -> None:
         """Stop the service and transition lifecycle state."""
@@ -88,10 +104,18 @@ class BaseService(ABC):
             self._state = ServiceState.FAILED
             self._exceptions.report(exc, service=self._name, context="stop")
             self._logger.exception("Service failed to stop")
+            self._event_bus.publish(
+                ServiceFailed(
+                    service_name=self._name,
+                    error=str(exc),
+                    context="stop",
+                )
+            )
             raise ServiceError(f"{self._name} failed to stop") from exc
 
         self._state = ServiceState.STOPPED
         self._logger.info("Service stopped")
+        self._event_bus.publish(ServiceStopped(service_name=self._name))
 
     def health(self) -> dict[str, Any]:
         """Return service-specific health information."""

@@ -7,6 +7,14 @@ from supabase import Client
 
 from ottomandevice.command import CommandService
 from ottomandevice.core.config import ConfigManager
+from ottomandevice.core.event_bus import (
+    CloudConnected,
+    CloudDisconnected,
+    EventBus,
+    HealthUpdated,
+    RuntimeStarted,
+    RuntimeStopping,
+)
 from ottomandevice.core.exceptions import ExceptionManager
 from ottomandevice.core.health import HealthMonitor
 from ottomandevice.core.logger import configure_logging, get_logger
@@ -42,6 +50,7 @@ class Runtime:
         self._startup_report = HealthReport()
         self._supabase: Client | None = None
         self._heartbeat_service: HeartbeatService | None = None
+        self._event_bus = EventBus.get_instance()
 
     @property
     def supervisor(self) -> ServiceSupervisor:
@@ -65,6 +74,7 @@ class Runtime:
         self._supervisor = ServiceSupervisor(
             restart_delay_seconds=runtime_config.supervisor_restart_delay_seconds,
             max_restarts=runtime_config.supervisor_max_restarts,
+            event_bus=self._event_bus,
         )
 
         with self._performance.measure("runtime.boot"):
@@ -75,6 +85,8 @@ class Runtime:
             self._start_services()
             self._log_system_health()
             print_startup_banner(self._startup_report)
+
+        self._event_bus.publish(RuntimeStarted())
 
         self._supervisor.supervise(
             poll_interval_seconds=runtime_config.health_check_interval_seconds,
@@ -104,6 +116,7 @@ class Runtime:
         if supabase is None or status == "FAIL":
             raise SystemExit(1)
         self._supabase = supabase
+        self._event_bus.publish(CloudConnected())
 
     def _run_startup_checks(self) -> None:
         assert self._supabase is not None
@@ -206,6 +219,16 @@ class Runtime:
     def _log_system_health(self) -> None:
         report = self._health_monitor.collect()
         self._logger.info("System health status: %s", report.status)
+        metric_payload = tuple(
+            {
+                "name": metric.name,
+                "value": metric.value,
+                "unit": metric.unit,
+                "status": metric.status,
+            }
+            for metric in report.metrics
+        )
+        self._event_bus.publish(HealthUpdated(status=report.status, metrics=metric_payload))
         for metric in report.metrics:
             self._logger.info(
                 "Health metric %s=%.2f%s (%s)",

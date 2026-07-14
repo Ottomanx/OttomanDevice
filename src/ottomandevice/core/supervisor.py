@@ -4,6 +4,7 @@ import threading
 import time
 from typing import Callable
 
+from ottomandevice.core.event_bus import EventBus, ServiceFailed
 from ottomandevice.core.exceptions import ExceptionManager, ServiceError
 from ottomandevice.core.logger import get_logger
 from ottomandevice.core.service import BaseService, ServiceState
@@ -17,6 +18,7 @@ class ServiceSupervisor:
         *,
         restart_delay_seconds: float = 5.0,
         max_restarts: int = 10,
+        event_bus: EventBus | None = None,
     ) -> None:
         self._services: list[BaseService] = []
         self._restart_delay_seconds = restart_delay_seconds
@@ -26,6 +28,7 @@ class ServiceSupervisor:
         self._supervisor_thread: threading.Thread | None = None
         self._exceptions = ExceptionManager.get_instance()
         self._logger = get_logger("supervisor")
+        self._event_bus = event_bus or EventBus.get_instance()
 
     def register(self, service: BaseService) -> None:
         """Register a service with the supervisor."""
@@ -111,6 +114,13 @@ class ServiceSupervisor:
                         service.name,
                         self._max_restarts,
                     )
+                    self._event_bus.publish(
+                        ServiceFailed(
+                            service_name=service.name,
+                            error="max restarts exceeded",
+                            context="supervisor",
+                        )
+                    )
                     continue
 
                 self._logger.warning("Restarting failed service %s", service.name)
@@ -120,6 +130,13 @@ class ServiceSupervisor:
                     self._restart_counts[service.name] = restarts + 1
                 except ServiceError as exc:
                     self._exceptions.report(exc, service=service.name, context="restart")
+                    self._event_bus.publish(
+                        ServiceFailed(
+                            service_name=service.name,
+                            error=str(exc),
+                            context="restart",
+                        )
+                    )
                     self._logger.exception("Automatic restart failed for %s", service.name)
 
     def _start_service(self, service: BaseService, *, required: bool) -> None:
