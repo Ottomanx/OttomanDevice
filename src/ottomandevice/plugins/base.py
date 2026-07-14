@@ -76,3 +76,7 @@ class AudioPlugin(BasePlugin):
 
 class SpeechPlugin(BasePlugin):
     """Base class for speech runtime plugins."""
+
+
+class AvatarPlugin(BasePlugin):
+    """Base class for avatar runtime plugins."""

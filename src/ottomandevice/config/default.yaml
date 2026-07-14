@@ -52,6 +52,13 @@ speech:
   streaming: true
   language: auto
 
+avatar:
+  enabled: true
+  fps: 60
+  idle_timeout: 30
+  blink_interval: random
+  lipsync: true
+
 firmware:
   version: "0.1.0"
 

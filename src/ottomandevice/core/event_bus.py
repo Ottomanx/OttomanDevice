@@ -954,6 +954,106 @@ class SpeechPlaybackInterrupted(Event):
 
 
 @dataclass(frozen=True)
+class AvatarLoaded(Event):
+    """Published when the avatar renderer loads successfully."""
+
+    backend: str = ""
+    asset_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"backend": self.backend, "asset_id": self.asset_id},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "backend": self.backend, "asset_id": self.asset_id}
+        return data
+
+
+@dataclass(frozen=True)
+class AvatarStateChanged(Event):
+    """Published when the avatar state machine transitions."""
+
+    previous_state: str = ""
+    current_state: str = ""
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "previous_state": self.previous_state,
+                "current_state": self.current_state,
+                "reason": self.reason,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "previous_state": self.previous_state,
+            "current_state": self.current_state,
+            "reason": self.reason,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AvatarAnimationStarted(Event):
+    """Published when an avatar animation begins."""
+
+    animation: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"animation": self.animation})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "animation": self.animation}
+        return data
+
+
+@dataclass(frozen=True)
+class AvatarAnimationCompleted(Event):
+    """Published when an avatar animation completes."""
+
+    animation: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"animation": self.animation})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "animation": self.animation}
+        return data
+
+
+@dataclass(frozen=True)
+class AvatarError(Event):
+    """Published when the avatar runtime encounters an error."""
+
+    error: str = ""
+    state: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"error": self.error, "state": self.state},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "error": self.error, "state": self.state}
+        return data
+
+
+@dataclass(frozen=True)
 class CloudConnected(Event):
     """Published when the cloud backend connection is established."""
 

@@ -99,6 +99,10 @@ class SpeechManager:
             cls._instance = None
 
     @property
+    def playback_buffer(self) -> AudioBuffer:
+        return self._playback_buffer
+
+    @property
     def pipeline(self) -> SpeechPipeline:
         return self._pipeline
 

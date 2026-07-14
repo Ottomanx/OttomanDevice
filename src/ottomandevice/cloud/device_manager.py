@@ -71,6 +71,7 @@ class HeartbeatMetrics:
     audio: dict[str, Any] | None = None
     ai: dict[str, Any] | None = None
     speech: dict[str, Any] | None = None
+    avatar: dict[str, Any] | None = None
 
     def to_cloud_record(self) -> dict[str, Any]:
         return {
@@ -93,6 +94,7 @@ class HeartbeatMetrics:
                 "audio": self.audio or {},
                 "ai": self.ai or {},
                 "speech": self.speech or {},
+                "avatar": self.avatar or {},
             },
         }
 
@@ -171,6 +173,19 @@ def _parse_timestamp(value: str | None) -> datetime | None:
 
 
 
+
+
+
+def _avatar_health_snapshot() -> dict[str, Any] | None:
+    try:
+        from ottomandevice.plugins.avatar.manager import AvatarManager
+
+        manager = AvatarManager.get_instance_optional()
+        if manager is None:
+            return None
+        return manager.health_report()
+    except Exception:
+        return None
 
 def _speech_health_snapshot() -> dict[str, Any] | None:
     try:
@@ -337,6 +352,7 @@ class DeviceCloudManager:
             audio=_audio_health_snapshot(),
             ai=_ai_health_snapshot(),
             speech=_speech_health_snapshot(),
+            avatar=_avatar_health_snapshot(),
         )
 
     def _run_async_loop(self) -> None:

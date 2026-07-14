@@ -89,6 +89,15 @@ class SpeechSettings:
 
 
 @dataclass(frozen=True)
+class AvatarSettings:
+    enabled: bool
+    fps: int
+    idle_timeout: int
+    blink_interval: str
+    lipsync: bool
+
+
+@dataclass(frozen=True)
 class FirmwareSettings:
     version: str
 
@@ -151,6 +160,7 @@ class Settings:
     audio: AudioSettings
     ai: AISettings
     speech: SpeechSettings
+    avatar: AvatarSettings
     firmware: FirmwareSettings
     ota: OtaSettings
     command: CommandSettings
@@ -209,6 +219,13 @@ class Settings:
                 tts_fallback=tuple(str(item) for item in data.get("speech", {}).get("tts_fallback", ["azure"])),
                 streaming=bool(data.get("speech", {}).get("streaming", True)),
                 language=str(data.get("speech", {}).get("language", "auto")),
+            ),
+            avatar=AvatarSettings(
+                enabled=bool(data.get("avatar", {}).get("enabled", True)),
+                fps=int(data.get("avatar", {}).get("fps", 60)),
+                idle_timeout=int(data.get("avatar", {}).get("idle_timeout", 30)),
+                blink_interval=str(data.get("avatar", {}).get("blink_interval", "random")),
+                lipsync=bool(data.get("avatar", {}).get("lipsync", True)),
             ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {
