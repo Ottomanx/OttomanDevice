@@ -1,0 +1,53 @@
+storage:
+  screenshots_bucket: screenshots
+  desktop_bucket: desktop-preview
+  screenshots_dir: data/screenshots
+
+heartbeat:
+  interval: 30
+
+telemetry:
+  interval: 60
+
+desktop:
+  capture_interval: 0.5
+  jpeg_quality: 70
+  width: 1280
+  latest_frame_name: latest.jpg
+
+camera:
+  windows_backend: CAP_DSHOW
+  default_backend: CAP_ANY
+  detection_range: 10
+
+firmware:
+  version: "0.1.0"
+
+ota:
+  check_interval: 300
+  download_dir: data/ota
+  active_dir: data/ota/active
+  backup_dir: data/ota/backup
+  firmware_bucket: firmware
+  signing_secret_env: OTA_SIGNING_SECRET
+
+command:
+  poll_interval: 5
+
+remote_desktop:
+  host: "127.0.0.1"
+  port: 9842
+  path: "/remote-desktop/v1"
+  subprotocol: "ottoman-remote-desktop.v1"
+  ping_interval: 15
+  disconnect_timeout: 30
+  token_ttl_seconds: 60
+  jwt_secret_env: "REMOTE_DESKTOP_JWT_SECRET"
+  jwt_algorithm: "HS256"
+  fps: 2
+  jpeg_quality: 70
+  width: 1280
+  file_transfer:
+    workspace_dir: data/workspace
+    max_file_size_bytes: 104857600
+    chunk_size: 65536

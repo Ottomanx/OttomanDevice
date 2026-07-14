@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+CONFIG_DIR = Path(__file__).resolve().parent
+DEFAULT_CONFIG_PATH = CONFIG_DIR / "default.yaml"
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = base.copy()
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+@dataclass(frozen=True)
+class StorageSettings:
+    screenshots_bucket: str
+    desktop_bucket: str
+    screenshots_dir: str
+
+
+@dataclass(frozen=True)
+class HeartbeatSettings:
+    interval: int
+
+
+@dataclass(frozen=True)
+class TelemetrySettings:
+    interval: int
+
+
+@dataclass(frozen=True)
+class DesktopSettings:
+    capture_interval: float
+    jpeg_quality: int
+    width: int
+    latest_frame_name: str
+
+
+@dataclass(frozen=True)
+class CameraSettings:
+    windows_backend: str
+    default_backend: str
+    detection_range: int
+
+
+@dataclass(frozen=True)
+class FirmwareSettings:
+    version: str
+
+
+@dataclass(frozen=True)
+class OtaSettings:
+    check_interval: int
+    download_dir: str
+    active_dir: str
+    backup_dir: str
+    firmware_bucket: str
+    signing_secret_env: str
+
+
+@dataclass(frozen=True)
+class CommandSettings:
+    poll_interval: int
+
+
+@dataclass(frozen=True)
+class FileTransferSettings:
+    workspace_dir: str
+    max_file_size_bytes: int
+    chunk_size: int
+
+
+@dataclass(frozen=True)
+class RemoteDesktopSettings:
+    host: str
+    port: int
+    path: str
+    subprotocol: str
+    ping_interval: int
+    disconnect_timeout: int
+    token_ttl_seconds: int
+    jwt_secret_env: str
+    jwt_algorithm: str
+    fps: int
+    jpeg_quality: int
+    width: int
+    file_transfer: FileTransferSettings
+
+
+@dataclass(frozen=True)
+class Settings:
+    storage: StorageSettings
+    heartbeat: HeartbeatSettings
+    telemetry: TelemetrySettings
+    desktop: DesktopSettings
+    camera: CameraSettings
+    firmware: FirmwareSettings
+    ota: OtaSettings
+    command: CommandSettings
+    remote_desktop: RemoteDesktopSettings
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Settings:
+        remote_desktop_data = data["remote_desktop"]
+        file_transfer_data = remote_desktop_data.get(
+            "file_transfer",
+            {
+                "workspace_dir": "data/workspace",
+                "max_file_size_bytes": 104857600,
+                "chunk_size": 65536,
+            },
+        )
+        return cls(
+            storage=StorageSettings(**data["storage"]),
+            heartbeat=HeartbeatSettings(**data["heartbeat"]),
+            telemetry=TelemetrySettings(**data["telemetry"]),
+            desktop=DesktopSettings(**data["desktop"]),
+            camera=CameraSettings(**data["camera"]),
+            firmware=FirmwareSettings(**data["firmware"]),
+            ota=OtaSettings(**data.get("ota", {
+                "check_interval": 300,
+                "download_dir": "data/ota",
+                "active_dir": "data/ota/active",
+                "backup_dir": "data/ota/backup",
+                "firmware_bucket": "firmware",
+                "signing_secret_env": "OTA_SIGNING_SECRET",
+            })),
+            command=CommandSettings(**data["command"]),
+            remote_desktop=RemoteDesktopSettings(
+                host=remote_desktop_data["host"],
+                port=remote_desktop_data["port"],
+                path=remote_desktop_data["path"],
+                subprotocol=remote_desktop_data["subprotocol"],
+                ping_interval=remote_desktop_data["ping_interval"],
+                disconnect_timeout=remote_desktop_data["disconnect_timeout"],
+                token_ttl_seconds=remote_desktop_data["token_ttl_seconds"],
+                jwt_secret_env=remote_desktop_data["jwt_secret_env"],
+                jwt_algorithm=remote_desktop_data["jwt_algorithm"],
+                fps=remote_desktop_data["fps"],
+                jpeg_quality=remote_desktop_data["jpeg_quality"],
+                width=remote_desktop_data["width"],
+                file_transfer=FileTransferSettings(**file_transfer_data),
+            ),
+        )
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    for encoding in ("utf-8-sig", "utf-8", "utf-16"):
+        try:
+            content = path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+
+        parsed = yaml.safe_load(content)
+        return parsed or {}
+
+    raise ValueError(f"Unable to read config file: {path}")
+
+
+def load_settings(config_path: Path | None = None) -> Settings:
+    raw = _read_yaml(DEFAULT_CONFIG_PATH)
+
+    override_path = config_path
+    if override_path is None:
+        env_path = os.getenv("OTTOMAN_CONFIG_PATH")
+        if env_path:
+            override_path = Path(env_path)
+
+    if override_path and override_path.exists():
+        override = _read_yaml(override_path)
+        raw = _deep_merge(raw, override)
+
+    return Settings.from_dict(raw)
+
+
+settings = load_settings()

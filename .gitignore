@@ -1,0 +1,105 @@
+# Python bytecode & caches
+__pycache__/
+*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Node
+node_modules/
+dashboard/node_modules/
+
+# Environment & secrets
+.env
+
+# Logs & runtime data
+logs/
+data/
+
+# OS
+.DS_Store
+
+# Python packaging (not source)
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Dashboard build output
+dashboard/dist/
+
+# IDE
+.idea/
+.vscode/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Python environment
+.python-version
+
+# Cursor / VS Code workspace
+*.code-workspace
+
+# JetBrains
+*.iml
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Supabase local development
+.supabase/
+
+# npm logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Secrets
+.env
+dashboard/.env
+
+# Runtime
+logs/
+data/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Packaging
+*.egg-info/
+src/ottomandevice.egg-info/
+
+# Supabase temp
+supabase/.temp/
+
+# Screenshots
+data/screenshots/
+
+# Device runtime
+data/device_id

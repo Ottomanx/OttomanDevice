@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --color-surface-950: #0a0f1a;
+  --color-surface-900: #0f172a;
+  --color-surface-800: #1e293b;
+  --color-surface-700: #334155;
+  --color-accent-500: #6366f1;
+  --color-accent-400: #818cf8;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+@layer base {
+  body {
+    @apply m-0 min-h-svh bg-surface-950 font-sans text-slate-100 antialiased;
+  }
+
+  #root {
+    @apply min-h-svh;
+  }
+}
