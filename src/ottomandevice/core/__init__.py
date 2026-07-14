@@ -24,6 +24,9 @@ from ottomandevice.core.event_bus import (
     PluginStarted,
     PluginStopped,
     PluginUninstalled,
+    DeviceRegistered,
+    DeviceRegistrationFailed,
+    DeviceProfileUpdated,
 )
 from ottomandevice.core.exceptions import (
     ConfigurationError,
@@ -33,6 +36,7 @@ from ottomandevice.core.exceptions import (
     OttomanDeviceError,
     ServiceError,
     PluginError,
+    DeviceIdentityError,
 )
 from ottomandevice.core.health import HealthMonitor, MetricValue, SystemHealthReport
 from ottomandevice.core.lifecycle import Runtime
@@ -90,6 +94,10 @@ __all__ = [
     "PluginStarted",
     "PluginStopped",
     "PluginUninstalled",
+    "DeviceRegistered",
+    "DeviceRegistrationFailed",
+    "DeviceProfileUpdated",
+    "DeviceIdentityError",
     "configure_logging",
     "get_logger",
 ]

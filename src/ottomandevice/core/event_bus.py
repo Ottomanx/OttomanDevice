@@ -344,6 +344,82 @@ class PluginFailed(Event):
         return data
 
 
+
+
+@dataclass(frozen=True)
+class DeviceRegistered(Event):
+    """Published when a device registers successfully with the cloud backend."""
+
+    device_uuid: str = ""
+    installation_id: str = ""
+    is_new: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_uuid": self.device_uuid,
+                "installation_id": self.installation_id,
+                "is_new": self.is_new,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_uuid": self.device_uuid,
+            "installation_id": self.installation_id,
+            "is_new": self.is_new,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class DeviceRegistrationFailed(Event):
+    """Published when cloud device registration fails."""
+
+    device_uuid: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"device_uuid": self.device_uuid, "error": self.error},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "device_uuid": self.device_uuid, "error": self.error}
+        return data
+
+
+@dataclass(frozen=True)
+class DeviceProfileUpdated(Event):
+    """Published when the runtime device profile is synchronized to the cloud."""
+
+    device_uuid: str = ""
+    plugin_count: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"device_uuid": self.device_uuid, "plugin_count": self.plugin_count},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_uuid": self.device_uuid,
+            "plugin_count": self.plugin_count,
+        }
+        return data
+
+
 @dataclass(frozen=True)
 class Subscription:
     """Registered event handler subscription."""

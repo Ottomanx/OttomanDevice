@@ -1,35 +1,24 @@
-import platform
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+"""Backward-compatible device registration shims."""
+
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, cast
 
 from supabase import Client
 
-from ottomandevice.config import settings
+from ottomandevice.device.identity import DeviceIdentity, get_device_uuid
 from ottomandevice.paths import PROJECT_ROOT
 
 DEVICE_ID_PATH = PROJECT_ROOT / "data" / "device_id"
-FIRMWARE_VERSION = settings.firmware.version
 
 
-class DeviceStatus(str, Enum):
-    ONLINE = "ONLINE"
-    OFFLINE = "OFFLINE"
+def load_or_create_device_id() -> str:
+    return get_device_uuid()
 
 
-def load_or_create_device_id(path: Path = DEVICE_ID_PATH) -> str:
-    if path.exists():
-        device_id = path.read_text(encoding="utf-8").strip()
-        if device_id:
-            return device_id
-
-    device_id = str(uuid.uuid4())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(device_id, encoding="utf-8")
-    return device_id
+def get_device_id() -> str:
+    return get_device_uuid()
 
 
 def _lookup_existing_device_id(supabase: Client, computer_name: str) -> str | None:
@@ -57,18 +46,23 @@ def resolve_device_id(
     computer_name: str | None = None,
     path: Path | None = None,
 ) -> str:
-    resolved_path = path or DEVICE_ID_PATH
+    if path is None:
+        return DeviceIdentity.load().device_uuid
+
+    resolved_path = path
     if resolved_path.exists():
         device_id = resolved_path.read_text(encoding="utf-8").strip()
         if device_id:
             return device_id
 
-    name = computer_name or platform.node()
+    name = computer_name or __import__("platform").node()
     existing_id = _lookup_existing_device_id(supabase, name)
     if existing_id:
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
         resolved_path.write_text(existing_id, encoding="utf-8")
         return existing_id
+
+    import uuid
 
     device_id = str(uuid.uuid4())
     resolved_path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,42 +70,37 @@ def resolve_device_id(
     return device_id
 
 
-def get_device_id(path: Path = DEVICE_ID_PATH) -> str:
-    if not path.exists():
-        raise FileNotFoundError(f"Device ID file not found: {path}")
+def register_device(supabase, device=None) -> None:
+    from ottomandevice.device.certificate import DeviceCertificate
+    from ottomandevice.device.registry import DeviceRegistry
 
-    device_id = path.read_text(encoding="utf-8").strip()
-    if not device_id:
-        raise ValueError(f"Device ID file is empty: {path}")
+    identity = DeviceIdentity.load()
+    certificate = DeviceCertificate.ensure(identity.device_uuid)
+    registry = DeviceRegistry(
+        supabase=supabase,
+        identity=identity,
+        certificate=certificate,
+    )
+    registry.register()
 
-    return device_id
 
-
-@dataclass(frozen=True)
 class Device:
-    device_id: str = field(default_factory=load_or_create_device_id)
-    computer_name: str = field(default_factory=platform.node)
-    operating_system: str = field(default_factory=platform.platform)
-    python_version: str = field(default_factory=platform.python_version)
-    firmware_version: str = FIRMWARE_VERSION
-    status: DeviceStatus = DeviceStatus.ONLINE
+    def __init__(self, device_id: str | None = None) -> None:
+        self._identity = DeviceIdentity.load()
 
-    def to_record(self) -> dict[str, Any]:
+    @property
+    def device_id(self) -> str:
+        return self._identity.device_uuid
+
+    def to_record(self) -> dict:
+        from ottomandevice.device.profile import DeviceProfile
+
+        profile = DeviceProfile.collect(self._identity)
         return {
-            "device_id": self.device_id,
-            "computer_name": self.computer_name,
-            "operating_system": self.operating_system,
-            "python_version": self.python_version,
-            "firmware_version": self.firmware_version,
-            "status": self.status.value,
-            "last_online_at": datetime.now(timezone.utc).isoformat(),
+            "device_id": profile.device_uuid,
+            "computer_name": profile.hostname,
+            "operating_system": profile.os,
+            "python_version": __import__("platform").python_version(),
+            "firmware_version": profile.application_version,
+            "status": "ONLINE",
         }
-
-
-def register_device(supabase: Client, device: Device | None = None) -> None:
-    if device is None:
-        computer_name = platform.node()
-        device_id = resolve_device_id(supabase, computer_name)
-        device = Device(device_id=device_id)
-    record = device.to_record()
-    supabase.table("devices_enhanced").upsert(record, on_conflict="device_id").execute()

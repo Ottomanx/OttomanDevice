@@ -7,7 +7,6 @@ from supabase import Client, create_client
 
 from ottomandevice.camera import CameraInfo, CameraService
 from ottomandevice.config import settings
-from ottomandevice.runtime import register_device
 
 HealthStatus = Literal["PASS", "WARN", "FAIL", "DISABLED"]
 
@@ -41,8 +40,24 @@ def check_supabase_connection(url: str, key: str) -> tuple[Client | None, Health
 
 def check_device_registration(supabase: Client) -> tuple[HealthStatus, str]:
     try:
-        register_device(supabase)
-        return "PASS", "Registered"
+        from ottomandevice.device.certificate import DeviceCertificate
+        from ottomandevice.device.identity import DeviceIdentity
+        from ottomandevice.device.registry import DeviceRegistry
+
+        identity = DeviceIdentity.load()
+        certificate = DeviceCertificate.ensure(identity.device_uuid)
+        if identity.certificate_fingerprint != certificate.fingerprint:
+            identity = identity.with_certificate_fingerprint(certificate.fingerprint)
+            identity.persist()
+        registry = DeviceRegistry(
+            supabase=supabase,
+            identity=identity,
+            certificate=certificate,
+        )
+        result = registry.register()
+        if result.is_new:
+            return "PASS", "Registered new device"
+        return "PASS", "Reused existing device identity"
     except Exception as exc:
         return "FAIL", str(exc)
 

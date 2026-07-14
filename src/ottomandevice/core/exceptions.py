@@ -26,6 +26,10 @@ class PluginError(OttomanDeviceError):
     """Raised when plugin discovery or lifecycle operations fail."""
 
 
+class DeviceIdentityError(OttomanDeviceError):
+    """Raised when device identity or registration operations fail."""
+
+
 @dataclass(frozen=True)
 class ExceptionRecord:
     """Immutable record of a reported runtime exception."""

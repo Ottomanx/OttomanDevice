@@ -103,3 +103,5 @@ data/screenshots/
 
 # Device runtime
 data/device_id
+data/device.json
+data/device/

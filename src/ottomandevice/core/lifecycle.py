@@ -20,6 +20,10 @@ from ottomandevice.core.health import HealthMonitor
 from ottomandevice.core.logger import configure_logging, get_logger
 from ottomandevice.core.performance import PerformanceMonitor
 from ottomandevice.core.plugin_manager import PluginManager
+from ottomandevice.device.certificate import DeviceCertificate
+from ottomandevice.device.identity import DeviceIdentity
+from ottomandevice.device.profile import DeviceProfile
+from ottomandevice.device.registry import DeviceRegistry
 from ottomandevice.core.service import LegacyServiceAdapter
 from ottomandevice.core.supervisor import ServiceSupervisor
 from ottomandevice.desktop_stream import DesktopStreamService
@@ -53,6 +57,8 @@ class Runtime:
         self._heartbeat_service: HeartbeatService | None = None
         self._event_bus = EventBus.get_instance()
         self._plugin_manager: PluginManager | None = None
+        self._device_identity: DeviceIdentity | None = None
+        self._device_registry: DeviceRegistry | None = None
 
     @property
     def supervisor(self) -> ServiceSupervisor:
@@ -82,6 +88,7 @@ class Runtime:
         with self._performance.measure("runtime.boot"):
             self._validate_environment()
             self._connect_supabase()
+            self._initialize_device_identity()
             self._run_startup_checks()
             self._register_services()
             self._load_plugins()
@@ -120,6 +127,26 @@ class Runtime:
             raise SystemExit(1)
         self._supabase = supabase
         self._event_bus.publish(CloudConnected())
+
+
+
+    def _initialize_device_identity(self) -> None:
+        """Load local identity and ensure device certificate material exists."""
+        self._device_identity = DeviceIdentity.load()
+        certificate = DeviceCertificate.ensure(self._device_identity.device_uuid)
+        if self._device_identity.certificate_fingerprint != certificate.fingerprint:
+            self._device_identity = self._device_identity.with_certificate_fingerprint(
+                certificate.fingerprint
+            )
+            self._device_identity.persist()
+        assert self._supabase is not None
+        self._device_registry = DeviceRegistry(
+            supabase=self._supabase,
+            identity=self._device_identity,
+            certificate=certificate,
+            event_bus=self._event_bus,
+        )
+        self._logger.info("Device identity loaded: %s", self._device_identity.device_uuid)
 
     def _run_startup_checks(self) -> None:
         assert self._supabase is not None
@@ -210,6 +237,23 @@ class Runtime:
         self._plugin_manager.discover()
         self._plugin_manager.load_all()
         self._logger.info("Loaded %s plugin(s)", len(self._plugin_manager.plugins))
+        self._sync_device_profile()
+
+
+
+    def _sync_device_profile(self) -> None:
+        """Publish the runtime device profile after plugins are loaded."""
+        if self._device_identity is None or self._device_registry is None:
+            return
+        profile = DeviceProfile.collect(
+            self._device_identity,
+            plugin_manager=self._plugin_manager,
+        )
+        self._device_registry.update_profile(profile)
+        self._logger.info(
+            "Device profile synchronized (%s plugins)",
+            len(profile.plugins),
+        )
 
     def _start_services(self) -> None:
         for service in self._supervisor.services:
