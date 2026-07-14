@@ -140,18 +140,22 @@ async def _recv_transfer_message(websocket: Any, expected: str) -> dict[str, Any
 async def test_combined_remote_desktop_feature_flow() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         workspace = Path(temp_dir)
+        settings = _test_remote_desktop_settings()
         server = RemoteDesktopWebSocketServer(
             device_id=TEST_DEVICE_ID,
-            settings=_test_remote_desktop_settings(),
+            settings=settings,
             jwt_secret=TEST_JWT_SECRET,
             capture_engine=MockCaptureEngine(),
             input_injector=MockInputInjector(),
             keyboard_injector=MockKeyboardInjector(),
-            file_transfer_manager=FileTransferManager(workspace_dir=workspace),
+            file_transfer_manager=FileTransferManager(
+                workspace_dir=workspace,
+                max_file_size_bytes=settings.file_transfer.max_file_size_bytes,
+                chunk_size=settings.file_transfer.chunk_size,
+            ),
         )
         await server.start()
         try:
-            settings = _test_remote_desktop_settings()
             uri = f"ws://127.0.0.1:{server.bound_port}{settings.path}"
             token = create_session_jwt(
                 device_id=TEST_DEVICE_ID,

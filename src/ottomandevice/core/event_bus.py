@@ -1054,6 +1054,140 @@ class AvatarError(Event):
 
 
 @dataclass(frozen=True)
+class SessionStarted(Event):
+    """Published when a digital-human runtime session starts."""
+
+    session_id: str = ""
+    ai_session_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"session_id": self.session_id, "ai_session_id": self.ai_session_id},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "session_id": self.session_id,
+            "ai_session_id": self.ai_session_id,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SessionEnded(Event):
+    """Published when a runtime session ends."""
+
+    session_id: str = ""
+    duration_ms: float = 0.0
+    interactions_completed: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "session_id": self.session_id,
+                "duration_ms": self.duration_ms,
+                "interactions_completed": self.interactions_completed,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "session_id": self.session_id,
+            "duration_ms": self.duration_ms,
+            "interactions_completed": self.interactions_completed,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class SessionRecovered(Event):
+    """Published when a runtime session recovers from an error."""
+
+    session_id: str = ""
+    recoveries: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"session_id": self.session_id, "recoveries": self.recoveries},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "session_id": self.session_id, "recoveries": self.recoveries}
+        return data
+
+
+@dataclass(frozen=True)
+class SessionFailed(Event):
+    """Published when a runtime session fails permanently."""
+
+    session_id: str = ""
+    error: str = ""
+    pipeline_stage: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "session_id": self.session_id,
+                "error": self.error,
+                "pipeline_stage": self.pipeline_stage,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "session_id": self.session_id,
+            "error": self.error,
+            "pipeline_stage": self.pipeline_stage,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class PipelineCompleted(Event):
+    """Published when an end-to-end interaction pipeline completes."""
+
+    session_id: str = ""
+    total_latency_ms: float = 0.0
+    pipeline_stage: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "session_id": self.session_id,
+                "total_latency_ms": self.total_latency_ms,
+                "pipeline_stage": self.pipeline_stage,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "session_id": self.session_id,
+            "total_latency_ms": self.total_latency_ms,
+            "pipeline_stage": self.pipeline_stage,
+        }
+        return data
+
+
+@dataclass(frozen=True)
 class CloudConnected(Event):
     """Published when the cloud backend connection is established."""
 

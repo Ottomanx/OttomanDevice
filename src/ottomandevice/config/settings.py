@@ -98,6 +98,14 @@ class AvatarSettings:
 
 
 @dataclass(frozen=True)
+class RuntimeSessionSettings:
+    enabled: bool
+    idle_timeout: int
+    recovery_attempts: int
+    listen_timeout: float
+
+
+@dataclass(frozen=True)
 class FirmwareSettings:
     version: str
 
@@ -161,6 +169,7 @@ class Settings:
     ai: AISettings
     speech: SpeechSettings
     avatar: AvatarSettings
+    runtime_session: RuntimeSessionSettings
     firmware: FirmwareSettings
     ota: OtaSettings
     command: CommandSettings
@@ -226,6 +235,12 @@ class Settings:
                 idle_timeout=int(data.get("avatar", {}).get("idle_timeout", 30)),
                 blink_interval=str(data.get("avatar", {}).get("blink_interval", "random")),
                 lipsync=bool(data.get("avatar", {}).get("lipsync", True)),
+            ),
+            runtime_session=RuntimeSessionSettings(
+                enabled=bool(data.get("runtime_session", {}).get("enabled", True)),
+                idle_timeout=int(data.get("runtime_session", {}).get("idle_timeout", 120)),
+                recovery_attempts=int(data.get("runtime_session", {}).get("recovery_attempts", 2)),
+                listen_timeout=float(data.get("runtime_session", {}).get("listen_timeout", 30.0)),
             ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {

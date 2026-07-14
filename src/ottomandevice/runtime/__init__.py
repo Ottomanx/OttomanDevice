@@ -1,7 +1,14 @@
+"""Runtime helpers and digital-human session integration for OttomanDevice."""
+
 from __future__ import annotations
 
 from ottomandevice.device import DeviceIdentity, get_device_uuid
 from ottomandevice.paths import PROJECT_ROOT
+from ottomandevice.runtime.context import SessionContext
+from ottomandevice.runtime.manager import ComponentBridge, SessionManager
+from ottomandevice.runtime.metrics import SessionMetrics
+from ottomandevice.runtime.pipeline import InteractionPipeline, PipelineStage
+from ottomandevice.runtime.session import RuntimeSession, SessionLifecycle
 
 
 def load_or_create_device_id() -> str:
@@ -39,9 +46,17 @@ class Device:
 
 
 __all__ = [
-    "PROJECT_ROOT",
+    "ComponentBridge",
     "Device",
     "DeviceIdentity",
+    "InteractionPipeline",
+    "PipelineStage",
+    "PROJECT_ROOT",
+    "RuntimeSession",
+    "SessionContext",
+    "SessionLifecycle",
+    "SessionManager",
+    "SessionMetrics",
     "get_device_id",
     "get_device_uuid",
     "load_or_create_device_id",

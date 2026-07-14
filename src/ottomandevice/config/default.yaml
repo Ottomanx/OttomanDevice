@@ -59,6 +59,12 @@ avatar:
   blink_interval: random
   lipsync: true
 
+runtime_session:
+  enabled: true
+  idle_timeout: 120
+  recovery_attempts: 2
+  listen_timeout: 30.0
+
 firmware:
   version: "0.1.0"
 
