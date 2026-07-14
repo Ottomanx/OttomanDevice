@@ -18,6 +18,12 @@ from ottomandevice.core.event_bus import (
     ServiceStarted,
     ServiceStopped,
     Subscription,
+    PluginFailed,
+    PluginInitialized,
+    PluginInstalled,
+    PluginStarted,
+    PluginStopped,
+    PluginUninstalled,
 )
 from ottomandevice.core.exceptions import (
     ConfigurationError,
@@ -26,9 +32,11 @@ from ottomandevice.core.exceptions import (
     HealthCheckError,
     OttomanDeviceError,
     ServiceError,
+    PluginError,
 )
 from ottomandevice.core.health import HealthMonitor, MetricValue, SystemHealthReport
 from ottomandevice.core.lifecycle import Runtime
+from ottomandevice.core.plugin_manager import PluginManager
 from ottomandevice.core.logger import configure_logging, get_logger
 from ottomandevice.core.performance import PerformanceMonitor, TimingSample, TimingStats
 from ottomandevice.core.service import BaseService, LegacyServiceAdapter, ServiceState
@@ -74,6 +82,14 @@ __all__ = [
     "ServiceStarted",
     "ServiceStopped",
     "Subscription",
+    "PluginError",
+    "PluginManager",
+    "PluginFailed",
+    "PluginInitialized",
+    "PluginInstalled",
+    "PluginStarted",
+    "PluginStopped",
+    "PluginUninstalled",
     "configure_logging",
     "get_logger",
 ]

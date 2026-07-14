@@ -240,6 +240,110 @@ class CloudDisconnected(Event):
         return data
 
 
+
+
+@dataclass(frozen=True)
+class PluginInstalled(Event):
+    """Published when a plugin completes installation."""
+
+    plugin_id: str = ""
+    name: str = ""
+    version: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"plugin_id": self.plugin_id, "name": self.name, "version": self.version},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id, "name": self.name, "version": self.version}
+        return data
+
+
+@dataclass(frozen=True)
+class PluginInitialized(Event):
+    """Published when a plugin completes initialization."""
+
+    plugin_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"plugin_id": self.plugin_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id}
+        return data
+
+
+@dataclass(frozen=True)
+class PluginStarted(Event):
+    """Published when a plugin starts successfully."""
+
+    plugin_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"plugin_id": self.plugin_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id}
+        return data
+
+
+@dataclass(frozen=True)
+class PluginStopped(Event):
+    """Published when a plugin stops successfully."""
+
+    plugin_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"plugin_id": self.plugin_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id}
+        return data
+
+
+@dataclass(frozen=True)
+class PluginUninstalled(Event):
+    """Published when a plugin is uninstalled."""
+
+    plugin_id: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"plugin_id": self.plugin_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id}
+        return data
+
+
+@dataclass(frozen=True)
+class PluginFailed(Event):
+    """Published when a plugin lifecycle operation fails."""
+
+    plugin_id: str = ""
+    phase: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"plugin_id": self.plugin_id, "phase": self.phase, "error": self.error},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "plugin_id": self.plugin_id, "phase": self.phase, "error": self.error}
+        return data
+
+
 @dataclass(frozen=True)
 class Subscription:
     """Registered event handler subscription."""

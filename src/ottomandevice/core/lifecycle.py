@@ -19,6 +19,7 @@ from ottomandevice.core.exceptions import ExceptionManager
 from ottomandevice.core.health import HealthMonitor
 from ottomandevice.core.logger import configure_logging, get_logger
 from ottomandevice.core.performance import PerformanceMonitor
+from ottomandevice.core.plugin_manager import PluginManager
 from ottomandevice.core.service import LegacyServiceAdapter
 from ottomandevice.core.supervisor import ServiceSupervisor
 from ottomandevice.desktop_stream import DesktopStreamService
@@ -51,6 +52,7 @@ class Runtime:
         self._supabase: Client | None = None
         self._heartbeat_service: HeartbeatService | None = None
         self._event_bus = EventBus.get_instance()
+        self._plugin_manager: PluginManager | None = None
 
     @property
     def supervisor(self) -> ServiceSupervisor:
@@ -82,6 +84,7 @@ class Runtime:
             self._connect_supabase()
             self._run_startup_checks()
             self._register_services()
+            self._load_plugins()
             self._start_services()
             self._log_system_health()
             print_startup_banner(self._startup_report)
@@ -199,6 +202,15 @@ class Runtime:
         else:
             self._startup_report.set("ota", "DISABLED", "OTA disabled (signing secret missing)")
 
+
+
+    def _load_plugins(self) -> None:
+        """Discover and start runtime plugins in dependency order."""
+        self._plugin_manager = PluginManager.get_instance(event_bus=self._event_bus)
+        self._plugin_manager.discover()
+        self._plugin_manager.load_all()
+        self._logger.info("Loaded %s plugin(s)", len(self._plugin_manager.plugins))
+
     def _start_services(self) -> None:
         for service in self._supervisor.services:
             try:
@@ -246,5 +258,7 @@ class Runtime:
         self._supervisor.join_blocking_service(lambda service: service.name == "heartbeat")
 
     def _shutdown(self) -> None:
+        if self._plugin_manager is not None:
+            self._plugin_manager.shutdown()
         self._supervisor.stop_all()
         self._logger.info("All services stopped")

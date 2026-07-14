@@ -22,6 +22,10 @@ class HealthCheckError(OttomanDeviceError):
     """Raised when a health probe fails."""
 
 
+class PluginError(OttomanDeviceError):
+    """Raised when plugin discovery or lifecycle operations fail."""
+
+
 @dataclass(frozen=True)
 class ExceptionRecord:
     """Immutable record of a reported runtime exception."""
