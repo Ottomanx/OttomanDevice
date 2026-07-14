@@ -25,6 +25,13 @@ camera:
   default_backend: CAP_ANY
   detection_range: 10
 
+audio:
+  enabled: true
+  device: auto
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1024
+
 firmware:
   version: "0.1.0"
 

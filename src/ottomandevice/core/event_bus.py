@@ -338,13 +338,219 @@ class CameraError(Event):
 
 
 @dataclass(frozen=True)
+class AudioDetected(Event):
+    """Published when a microphone is discovered."""
+
+    device_id: int = 0
+    name: str = ""
+    sample_rate: int = 0
+    channels: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "name": self.name,
+                "sample_rate": self.sample_rate,
+                "channels": self.channels,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "name": self.name,
+            "sample_rate": self.sample_rate,
+            "channels": self.channels,
+        }
+        return data
+
+
+@dataclass(frozen=True)
 class AudioStarted(Event):
     """Published when audio capture starts."""
+
+    device_id: int = 0
+    sample_rate: int = 0
+    channels: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "sample_rate": self.sample_rate,
+                "channels": self.channels,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "sample_rate": self.sample_rate,
+            "channels": self.channels,
+        }
+        return data
 
 
 @dataclass(frozen=True)
 class AudioStopped(Event):
     """Published when audio capture stops."""
+
+    device_id: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"device_id": self.device_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "device_id": self.device_id}
+        return data
+
+
+@dataclass(frozen=True)
+class AudioFrameCaptured(Event):
+    """Published when a PCM chunk is captured."""
+
+    device_id: int = 0
+    chunk_number: int = 0
+    sample_rate: int = 0
+    channels: int = 0
+    bytes_length: int = 0
+    input_level_db: float = -100.0
+    streaming: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "chunk_number": self.chunk_number,
+                "sample_rate": self.sample_rate,
+                "channels": self.channels,
+                "bytes_length": self.bytes_length,
+                "input_level_db": self.input_level_db,
+                "streaming": self.streaming,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "chunk_number": self.chunk_number,
+            "sample_rate": self.sample_rate,
+            "channels": self.channels,
+            "bytes_length": self.bytes_length,
+            "input_level_db": self.input_level_db,
+            "streaming": self.streaming,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AudioDisconnected(Event):
+    """Published when the active microphone disconnects."""
+
+    device_id: int = 0
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {"device_id": self.device_id, "reason": self.reason},
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "reason": self.reason,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AudioReconnected(Event):
+    """Published when a disconnected microphone reconnects."""
+
+    device_id: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "payload", {"device_id": self.device_id})
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {**data["payload"], "device_id": self.device_id}
+        return data
+
+
+@dataclass(frozen=True)
+class AudioSilenceDetected(Event):
+    """Published when captured audio falls below the silence threshold."""
+
+    device_id: int = 0
+    input_level_db: float = -100.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "input_level_db": self.input_level_db,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "input_level_db": self.input_level_db,
+        }
+        return data
+
+
+@dataclass(frozen=True)
+class AudioError(Event):
+    """Published when an audio operation fails."""
+
+    device_id: int = 0
+    operation: str = ""
+    error: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "payload",
+            {
+                "device_id": self.device_id,
+                "operation": self.operation,
+                "error": self.error,
+            },
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        data = super().to_dict()
+        data["payload"] = {
+            **data["payload"],
+            "device_id": self.device_id,
+            "operation": self.operation,
+            "error": self.error,
+        }
+        return data
 
 
 @dataclass(frozen=True)

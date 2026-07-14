@@ -125,6 +125,30 @@ def check_camera() -> tuple[HealthStatus, str, CameraInfo | None]:
     )
 
 
+
+def check_audio() -> tuple[HealthStatus, str]:
+    if not settings.audio.enabled:
+        return "DISABLED", "Audio disabled in configuration"
+
+    try:
+        from ottomandevice.plugins.audio.manager import AudioManager
+
+        manager = AudioManager.get_instance_optional()
+        if manager is not None and manager.is_open:
+            device_id = manager.active_device_id
+            if device_id is not None:
+                return (
+                    "PASS",
+                    f"Microphone index {device_id} ({settings.audio.sample_rate}Hz)",
+                )
+            return "WARN", "Audio plugin active but disconnected"
+    except Exception as exc:
+        return "WARN", f"Audio check failed: {exc}"
+
+    return "WARN", "Microphone not detected"
+
+
+
 def check_remote_desktop_configuration(jwt_secret: str) -> tuple[HealthStatus, str]:
     if jwt_secret.strip():
         return "PASS", "JWT secret configured"
@@ -160,6 +184,9 @@ def run_startup_health_checks(
 
     camera_status, camera_message, _camera_info = check_camera()
     report.set("camera", camera_status, camera_message)
+
+    audio_status, audio_message = check_audio()
+    report.set("audio", audio_status, audio_message)
 
     remote_status, remote_message = check_remote_desktop_configuration(jwt_secret)
     report.set("remote_desktop_config", remote_status, remote_message)

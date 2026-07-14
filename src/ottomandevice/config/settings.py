@@ -58,6 +58,16 @@ class CameraSettings:
     detection_range: int
 
 
+
+
+@dataclass(frozen=True)
+class AudioSettings:
+    enabled: bool
+    device: str
+    sample_rate: int
+    channels: int
+    chunk_size: int
+
 @dataclass(frozen=True)
 class FirmwareSettings:
     version: str
@@ -118,6 +128,7 @@ class Settings:
     telemetry: TelemetrySettings
     desktop: DesktopSettings
     camera: CameraSettings
+    audio: AudioSettings
     firmware: FirmwareSettings
     ota: OtaSettings
     command: CommandSettings
@@ -153,6 +164,13 @@ class Settings:
                 windows_backend=data["camera"]["windows_backend"],
                 default_backend=data["camera"]["default_backend"],
                 detection_range=int(data["camera"]["detection_range"]),
+            ),
+            audio=AudioSettings(
+                enabled=bool(data.get("audio", {}).get("enabled", True)),
+                device=str(data.get("audio", {}).get("device", "auto")),
+                sample_rate=int(data.get("audio", {}).get("sample_rate", 16000)),
+                channels=int(data.get("audio", {}).get("channels", 1)),
+                chunk_size=int(data.get("audio", {}).get("chunk_size", 1024)),
             ),
             firmware=FirmwareSettings(**data["firmware"]),
             ota=OtaSettings(**data.get("ota", {
