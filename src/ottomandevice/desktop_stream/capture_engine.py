@@ -1,8 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageGrab
+
+if TYPE_CHECKING:
+    from ottomandevice.remote_desktop.monitor.models import MonitorInfo
+
+
+@dataclass(frozen=True)
+class CaptureRegion:
+    left: int
+    top: int
+    width: int
+    height: int
+
+    @property
+    def bbox(self) -> tuple[int, int, int, int]:
+        return (
+            self.left,
+            self.top,
+            self.left + self.width,
+            self.top + self.height,
+        )
 
 
 class CaptureEngine:
@@ -10,8 +32,22 @@ class CaptureEngine:
         self._target_width = target_width
         self._jpeg_quality = jpeg_quality
         self._buffer = BytesIO()
+        self._active_region: CaptureRegion | None = None
+
+    def set_active_monitor(self, monitor: MonitorInfo | None) -> None:
+        if monitor is None:
+            self._active_region = None
+            return
+        self._active_region = CaptureRegion(
+            left=monitor.x,
+            top=monitor.y,
+            width=monitor.width,
+            height=monitor.height,
+        )
 
     def capture_frame(self) -> Image.Image:
+        if self._active_region is not None:
+            return ImageGrab.grab(bbox=self._active_region.bbox)
         return ImageGrab.grab()
 
     def encode_frame(self, image: Image.Image) -> tuple[bytes, int, int]:

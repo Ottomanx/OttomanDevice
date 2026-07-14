@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 import pytest
@@ -86,13 +87,25 @@ async def _start_stream(websocket: Any) -> None:
     await _authenticate(websocket)
     await _send_json(websocket, "START_STREAM")
     await _recv_type(websocket, "START_STREAM")
+    await _recv_type(websocket, "MONITOR_LIST")
 
 
 async def _drain_clipboard_changed(websocket: Any) -> None:
-    while True:
-        message = await _recv_json(websocket, timeout=0.2)
-        if message["type"] != "CLIPBOARD_CHANGED":
-            return message
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        remaining = max(0.05, deadline - time.monotonic())
+        try:
+            message = await _recv_json(websocket, timeout=remaining)
+        except TimeoutError:
+            return
+        if message["type"] == "CLIPBOARD_CHANGED":
+            continue
+        if message["type"] == "PING":
+            await _send_json(websocket, "PONG")
+            continue
+        if message["type"] in {"FRAME", "MONITOR_LIST"}:
+            continue
+        return
 
 
 @pytest.mark.asyncio
@@ -107,8 +120,7 @@ async def test_clipboard_read() -> None:
             await _start_stream(websocket)
             await _drain_clipboard_changed(websocket)
             await _send_json(websocket, "CLIPBOARD_GET")
-            response = await _recv_json(websocket)
-            assert response["type"] == "CLIPBOARD_GET"
+            response = await _recv_type(websocket, "CLIPBOARD_GET")
             assert response["payload"]["text"] == "hello remote"
             assert mock.reads >= 1
     finally:
@@ -127,8 +139,7 @@ async def test_clipboard_write() -> None:
             await _start_stream(websocket)
             await _drain_clipboard_changed(websocket)
             await _send_json(websocket, "CLIPBOARD_SET", {"text": "copied text"})
-            changed = await _recv_json(websocket)
-            assert changed["type"] == "CLIPBOARD_CHANGED"
+            changed = await _recv_type(websocket, "CLIPBOARD_CHANGED")
             assert changed["payload"]["text"] == "copied text"
             assert mock.writes == ["copied text"]
             assert mock.content == "copied text"
@@ -148,8 +159,7 @@ async def test_empty_clipboard_read() -> None:
             await _start_stream(websocket)
             await _drain_clipboard_changed(websocket)
             await _send_json(websocket, "CLIPBOARD_GET")
-            response = await _recv_json(websocket)
-            assert response["type"] == "CLIPBOARD_GET"
+            response = await _recv_type(websocket, "CLIPBOARD_GET")
             assert response["payload"]["text"] == ""
     finally:
         await server.stop()
@@ -172,8 +182,7 @@ async def test_unicode_clipboard() -> None:
             assert response["payload"]["text"] == unicode_text
 
             await _send_json(websocket, "CLIPBOARD_SET", {"text": unicode_text})
-            changed = await _recv_json(websocket)
-            assert changed["type"] == "CLIPBOARD_CHANGED"
+            changed = await _recv_type(websocket, "CLIPBOARD_CHANGED")
             assert changed["payload"]["text"] == unicode_text
             assert mock.writes[-1] == unicode_text
     finally:

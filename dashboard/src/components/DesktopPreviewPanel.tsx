@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { FileTransferPanel } from './FileTransferPanel'
+import { MonitorSelectorStrip } from './MonitorSelectorStrip'
 import { StreamPerformanceOverlay } from './StreamPerformanceOverlay'
 import { useDesktopPreview } from '../hooks/useDesktopPreview'
 import { useRemoteDesktop } from '../hooks/useRemoteDesktop'
@@ -128,6 +129,10 @@ export function DesktopPreviewPanel({
     pauseFileTransfer,
     resumeFileTransfer,
     retryFileTransfer,
+    monitors,
+    selectedMonitorNumber,
+    monitorSwitchInProgress,
+    selectMonitor,
     streamPerformance,
     streamHealth,
     isFrozenFrame,
@@ -556,6 +561,13 @@ export function DesktopPreviewPanel({
           )}
         </div>
       )}
+
+      <MonitorSelectorStrip
+        monitors={monitors}
+        selectedNumber={selectedMonitorNumber}
+        switchInProgress={monitorSwitchInProgress}
+        onSelect={selectMonitor}
+      />
 
       <FileTransferPanel
         enabled={fileTransferActive}

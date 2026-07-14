@@ -48,6 +48,9 @@ remote_desktop:
   jpeg_quality: 70
   width: 1280
   clipboard_poll_interval_ms: 300
+  monitor_poll_interval_streaming_ms: 1000
+  monitor_poll_interval_idle_ms: 5000
+  monitor_switch_immediate_capture: true
   file_transfer:
     workspace_dir: data/workspace
     max_file_size_bytes: 104857600

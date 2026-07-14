@@ -23,6 +23,10 @@ import {
   type TransferHistoryEntry,
 } from '../utils/fileTransfer'
 import { RemoteFileTransferController } from '../utils/remoteFileTransfer'
+import {
+  RemoteMonitorController,
+  type MonitorView,
+} from '../utils/remoteMonitorSync'
 import { useRemoteDesktopStreamMetrics } from './useRemoteDesktopStreamMetrics'
 import { RemoteDesktopConnectionManager } from '../utils/remoteDesktopConnectionManager'
 import {
@@ -96,6 +100,10 @@ interface UseRemoteDesktopResult {
   pauseFileTransfer: (transferId: string) => void
   resumeFileTransfer: (transferId: string) => void
   retryFileTransfer: (transferId: string) => void
+  monitors: MonitorView[]
+  selectedMonitorNumber: number | null
+  monitorSwitchInProgress: boolean
+  selectMonitor: (monitorNumber: number) => void
   streamPerformance: StreamPerformanceSnapshot
   streamHealth: StreamHealth
   isFrozenFrame: boolean
@@ -206,12 +214,16 @@ export function useRemoteDesktop(
     null,
   )
   const [transferHistory, setTransferHistory] = useState<TransferHistoryEntry[]>([])
+  const [monitors, setMonitors] = useState<MonitorView[]>([])
+  const [selectedMonitorNumber, setSelectedMonitorNumber] = useState<number | null>(null)
+  const [monitorSwitchInProgress, setMonitorSwitchInProgress] = useState(false)
 
   const managerRef = useRef<RemoteDesktopConnectionManager | null>(null)
   const deviceIdRef = useRef(deviceId)
   const hasAuthenticatedRef = useRef(false)
   const clipboardRequestRef = useRef<((text: string) => void) | null>(null)
   const fileTransferControllerRef = useRef<RemoteFileTransferController | null>(null)
+  const monitorControllerRef = useRef<RemoteMonitorController | null>(null)
   const outboundSeqRef = useRef(0)
   const frameObjectUrlRef = useRef<string | null>(null)
   const [reconnectCount, setReconnectCount] = useState(0)
@@ -244,8 +256,12 @@ export function useRemoteDesktop(
   const resetTransferState = useCallback(() => {
     clipboardRequestRef.current = null
     fileTransferControllerRef.current?.reset()
+    monitorControllerRef.current?.reset()
     setFileTransferProgress(null)
     setTransferHistory([])
+    setMonitors([])
+    setSelectedMonitorNumber(null)
+    setMonitorSwitchInProgress(false)
   }, [])
 
   const enterFallback = useCallback(() => {
@@ -481,6 +497,29 @@ export function useRemoteDesktop(
     remoteControlActive,
   ])
 
+  const getMonitorController = useCallback(() => {
+    if (!monitorControllerRef.current) {
+      const controller = new RemoteMonitorController(sendMessage)
+      controller.onMonitorsChange = (nextMonitors, selectedNumber) => {
+        setMonitors(nextMonitors)
+        setSelectedMonitorNumber(selectedNumber)
+      }
+      controller.onSwitchStateChange = setMonitorSwitchInProgress
+      monitorControllerRef.current = controller
+    } else {
+      monitorControllerRef.current.setSendMessage(sendMessage)
+    }
+    monitorControllerRef.current.setDeviceId(deviceIdRef.current)
+    return monitorControllerRef.current
+  }, [sendMessage])
+
+  const selectMonitor = useCallback(
+    (monitorNumber: number) => {
+      getMonitorController().selectMonitorByNumber(monitorNumber)
+    },
+    [getMonitorController],
+  )
+
   const getFileTransferController = useCallback(() => {
     if (!fileTransferControllerRef.current) {
       const controller = new RemoteFileTransferController(sendMessage)
@@ -696,10 +735,17 @@ export function useRemoteDesktop(
           getFileTransferController().handleMessage(message.type, payload)
           break
         }
+        case 'MONITOR_LIST':
+        case 'MONITOR_SELECT':
+        case 'MONITOR_CHANGED': {
+          getMonitorController().handleMessage(message.type, payload)
+          break
+        }
         case 'START_STREAM': {
           if (payload.streaming === true) {
             manager.markConnected()
             getFileTransferController().resumePendingAfterReconnect()
+            getMonitorController().restorePreferredMonitor()
           }
           break
         }
@@ -747,7 +793,7 @@ export function useRemoteDesktop(
           break
       }
     },
-    [applyRemoteClipboardChange, enterFallback, getFileTransferController, sendMessage],
+    [applyRemoteClipboardChange, enterFallback, getFileTransferController, getMonitorController, sendMessage],
   )
 
   const enterFallbackRef = useRef(enterFallback)
@@ -891,6 +937,10 @@ export function useRemoteDesktop(
     pauseFileTransfer,
     resumeFileTransfer,
     retryFileTransfer,
+    monitors,
+    selectedMonitorNumber,
+    monitorSwitchInProgress,
+    selectMonitor,
     streamPerformance,
     streamHealth: streamPerformance.health,
     isFrozenFrame,

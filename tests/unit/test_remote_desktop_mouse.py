@@ -65,6 +65,16 @@ class MockInputInjector:
         self.right_clicks = 0
         self.double_clicks = 0
         self.scrolls: list[int] = []
+        self.monitor_bounds: tuple[int, int, int, int] | None = None
+
+    def set_monitor_bounds(
+        self,
+        offset_x: int,
+        offset_y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        self.monitor_bounds = (offset_x, offset_y, width, height)
 
     def move(self, x: float, y: float) -> None:
         self.moves.append((x, y))

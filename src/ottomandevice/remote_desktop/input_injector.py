@@ -63,6 +63,20 @@ class InputInjector:
     ) -> None:
         self._screen_width = screen_width
         self._screen_height = screen_height
+        self._offset_x = 0
+        self._offset_y = 0
+
+    def set_monitor_bounds(
+        self,
+        offset_x: int,
+        offset_y: int,
+        width: int,
+        height: int,
+    ) -> None:
+        self._offset_x = offset_x
+        self._offset_y = offset_y
+        self._screen_width = width
+        self._screen_height = height
 
     def _screen_size(self) -> tuple[int, int]:
         if self._screen_width is not None and self._screen_height is not None:
@@ -112,8 +126,8 @@ class InputInjector:
 
     def _to_native(self, x: float, y: float) -> tuple[int, int]:
         width, height = self._screen_size()
-        native_x = int(clamp_normalized(x) * max(width - 1, 0))
-        native_y = int(clamp_normalized(y) * max(height - 1, 0))
+        native_x = int(clamp_normalized(x) * max(width - 1, 0)) + self._offset_x
+        native_y = int(clamp_normalized(y) * max(height - 1, 0)) + self._offset_y
         return native_x, native_y
 
     def move(self, x: float, y: float) -> None:

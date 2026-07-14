@@ -47,6 +47,14 @@ from ottomandevice.remote_desktop.keyboard_injector import (
     parse_key,
     parse_text_input,
 )
+from ottomandevice.remote_desktop.monitor import (
+    DisplayWatcher,
+    MonitorError,
+    MonitorManager,
+    MonitorPollingMode,
+    default_display_enumerator,
+)
+from ottomandevice.remote_desktop.monitor.enumerator import DisplayEnumerator
 from ottomandevice.remote_desktop.session import RemoteDesktopSession, SessionState
 from ottomandevice.remote_desktop.streaming import DesktopStreamRunner
 
@@ -62,6 +70,7 @@ mouse_logger = get_logger("remote_desktop.mouse")
 keyboard_logger = get_logger("remote_desktop.keyboard")
 clipboard_logger = get_logger("remote_desktop.clipboard")
 file_logger = get_logger("remote_desktop.file_transfer")
+monitor_logger = get_logger("remote_desktop.monitor")
 session_logger = get_logger("remote_desktop.session")
 
 
@@ -113,6 +122,7 @@ class RemoteDesktopWebSocketServer:
         clipboard_manager: ClipboardManager | None = None,
         file_transfer_manager: TransferManager | None = None,
         transfer_transport: TransferTransport | None = None,
+        display_enumerator: DisplayEnumerator | None = None,
         on_stream_started: Callable[[], None] | None = None,
         on_stream_stopped: Callable[[], None] | None = None,
     ) -> None:
@@ -138,6 +148,7 @@ class RemoteDesktopWebSocketServer:
         )
         self._on_stream_started = on_stream_started
         self._on_stream_stopped = on_stream_stopped
+        self._display_enumerator = display_enumerator or default_display_enumerator()
         self._server: Server | None = None
         self._active_session: RemoteDesktopSession | None = None
         self._shutdown_event = asyncio.Event()
@@ -306,6 +317,39 @@ class RemoteDesktopWebSocketServer:
         file_transfer_control_active = False
         active_upload_ids: set[str] = set()
         download_running: dict[str, bool] = {}
+        session_authenticated = False
+        monitor_manager = MonitorManager(
+            enumerator=self._display_enumerator,
+            capture_engine=self._capture_engine,
+            input_injector=self._input_injector,
+            immediate_capture=self._settings.monitor_switch_immediate_capture,
+        )
+        display_watcher = DisplayWatcher(
+            manager=monitor_manager,
+            streaming_interval_ms=self._settings.monitor_poll_interval_streaming_ms,
+            idle_interval_ms=self._settings.monitor_poll_interval_idle_ms,
+        )
+
+        async def on_monitor_changed(change: Any, fallback: bool) -> None:
+            await monitor_manager.emit_monitor_changed(
+                send_message,
+                change,
+                fallback=fallback,
+            )
+            if stream_runner.is_running:
+                await monitor_manager.send_monitor_list(send_message)
+
+        monitor_watch_task = asyncio.create_task(
+            display_watcher.run(
+                on_changed=on_monitor_changed,
+                should_poll=lambda: (
+                    session_authenticated
+                    and session.state == SessionState.ACTIVE
+                    and display_watcher.mode != MonitorPollingMode.DISABLED
+                ),
+                shutdown_event=self._shutdown_event,
+            )
+        )
 
         try:
             async for raw_message in websocket:
@@ -358,11 +402,15 @@ class RemoteDesktopWebSocketServer:
                     authenticated = await self._handle_auth(message, send_message, session)
                     if authenticated:
                         last_pong_at = time.monotonic()
+                        session_authenticated = True
+                        display_watcher.set_mode(MonitorPollingMode.IDLE)
                 elif msg_type == "START_STREAM":
                     started = await self._handle_start_stream(
                         send_message,
                         session,
                         stream_runner,
+                        monitor_manager,
+                        display_watcher,
                     )
                     if started:
                         mouse_control_active = True
@@ -374,6 +422,7 @@ class RemoteDesktopWebSocketServer:
                         send_message,
                         session,
                         stream_runner,
+                        display_watcher,
                     )
                     if stopped and mouse_control_active:
                         mouse_logger.info("Mouse control stopped")
@@ -467,6 +516,14 @@ class RemoteDesktopWebSocketServer:
                         file_transfer_control_active,
                         download_running,
                     )
+                elif msg_type == "MONITOR_SELECT":
+                    await self._handle_monitor_select(
+                        send_message,
+                        message,
+                        session,
+                        stream_runner,
+                        monitor_manager,
+                    )
                 elif msg_type == "SESSION_INFO":
                     await self._handle_session_info(send_message, session)
                 elif msg_type == "SESSION_RELEASE":
@@ -517,6 +574,8 @@ class RemoteDesktopWebSocketServer:
             await stream_runner.stop()
             if was_streaming and self._on_stream_stopped is not None:
                 self._on_stream_stopped()
+            display_watcher.set_mode(MonitorPollingMode.DISABLED)
+            monitor_watch_task.cancel()
             heartbeat_task.cancel()
             clipboard_watch_task.cancel()
             for transfer_id in list(download_running.keys()):
@@ -526,6 +585,10 @@ class RemoteDesktopWebSocketServer:
             for transfer_id in list(active_upload_ids):
                 await self._file_transfer_manager.cancel_upload(transfer_id)
             active_upload_ids.clear()
+            try:
+                await monitor_watch_task
+            except asyncio.CancelledError:
+                pass
             try:
                 await heartbeat_task
             except asyncio.CancelledError:
@@ -647,6 +710,8 @@ class RemoteDesktopWebSocketServer:
         send_message: Any,
         session: RemoteDesktopSession,
         stream_runner: DesktopStreamRunner,
+        monitor_manager: MonitorManager,
+        display_watcher: DisplayWatcher,
     ) -> bool:
         if session.state != SessionState.ACTIVE:
             await send_message(
@@ -658,15 +723,30 @@ class RemoteDesktopWebSocketServer:
             )
             return False
 
+        if not has_permission(session.permissions, Permission.DESKTOP):
+            await send_message(
+                "ERROR",
+                payload={
+                    "code": "PERMISSION_DENIED",
+                    "message": "Desktop permission required",
+                },
+            )
+            return False
+
         if stream_runner.is_running:
             await send_message(
                 "START_STREAM",
                 payload={"streaming": True},
             )
+            await monitor_manager.send_monitor_list(send_message)
             return False
 
         if self._on_stream_started is not None:
             self._on_stream_started()
+
+        monitor_manager.bind_stream_runner(stream_runner)
+        await monitor_manager.initialize()
+        display_watcher.set_mode(MonitorPollingMode.STREAMING)
 
         await stream_runner.start(send_message)
         logger.info("Stream started")
@@ -675,6 +755,7 @@ class RemoteDesktopWebSocketServer:
             "START_STREAM",
             payload={"streaming": True},
         )
+        await monitor_manager.send_monitor_list(send_message)
         return True
 
     async def _handle_stop_stream(
@@ -682,6 +763,7 @@ class RemoteDesktopWebSocketServer:
         send_message: Any,
         session: RemoteDesktopSession,
         stream_runner: DesktopStreamRunner,
+        display_watcher: DisplayWatcher,
     ) -> bool:
         if session.state != SessionState.ACTIVE:
             await send_message(
@@ -697,6 +779,7 @@ class RemoteDesktopWebSocketServer:
         await stream_runner.stop()
         if was_streaming and self._on_stream_stopped is not None:
             self._on_stream_stopped()
+        display_watcher.set_mode(MonitorPollingMode.IDLE)
 
         logger.info("Stream stopped")
         await send_message(
@@ -704,6 +787,42 @@ class RemoteDesktopWebSocketServer:
             payload={"streaming": False},
         )
         return was_streaming
+
+    async def _handle_monitor_select(
+        self,
+        send_message: Any,
+        message: dict[str, Any],
+        session: RemoteDesktopSession,
+        stream_runner: DesktopStreamRunner,
+        monitor_manager: MonitorManager,
+    ) -> None:
+        if session.state != SessionState.ACTIVE:
+            return
+        if not has_permission(session.permissions, Permission.DESKTOP):
+            return
+
+        payload = message.get("payload", {})
+        if not isinstance(payload, dict):
+            monitor_logger.info("Invalid monitor select event")
+            return
+
+        monitor_id = payload.get("monitor_id")
+        if not isinstance(monitor_id, str) or not monitor_id:
+            return
+
+        try:
+            await monitor_manager.select_monitor(monitor_id, send_message)
+        except MonitorError as exc:
+            monitor_logger.info("Monitor select failed: %s", exc.code)
+            await send_message(
+                "MONITOR_SELECT",
+                {
+                    "monitor_id": monitor_id,
+                    "accepted": False,
+                    "code": exc.code,
+                    "message": exc.message,
+                },
+            )
 
     async def _handle_mouse_move(
         self,

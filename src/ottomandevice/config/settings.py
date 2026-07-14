@@ -101,6 +101,9 @@ class RemoteDesktopSettings:
     width: int
     clipboard_poll_interval_ms: int
     file_transfer: FileTransferSettings
+    monitor_poll_interval_streaming_ms: int = 1000
+    monitor_poll_interval_idle_ms: int = 5000
+    monitor_switch_immediate_capture: bool = True
 
 
 @dataclass(frozen=True)
@@ -163,6 +166,18 @@ class Settings:
                 clipboard_poll_interval_ms=remote_desktop_data.get(
                     "clipboard_poll_interval_ms",
                     300,
+                ),
+                monitor_poll_interval_streaming_ms=remote_desktop_data.get(
+                    "monitor_poll_interval_streaming_ms",
+                    1000,
+                ),
+                monitor_poll_interval_idle_ms=remote_desktop_data.get(
+                    "monitor_poll_interval_idle_ms",
+                    5000,
+                ),
+                monitor_switch_immediate_capture=remote_desktop_data.get(
+                    "monitor_switch_immediate_capture",
+                    True,
                 ),
                 file_transfer=FileTransferSettings(**file_transfer_data),
             ),

@@ -40,6 +40,9 @@ class MockCaptureEngine:
     def __init__(self) -> None:
         self._sequence = 0
 
+    def set_active_monitor(self, monitor: object | None) -> None:
+        del monitor
+
     def capture_and_encode(self) -> tuple[bytes, int, int]:
         self._sequence += 1
         return _minimal_jpeg_bytes(), 128, 72
@@ -99,6 +102,8 @@ async def _recv_type(
         if message["type"] == "PING":
             await _send_json(websocket, "PONG")
             continue
+        if message["type"] == "FRAME" and message["type"] != msg_type:
+            continue
         if message["type"] == msg_type:
             return message
     raise TimeoutError(f"Timed out waiting for {msg_type}")
@@ -119,6 +124,8 @@ async def _recv_no_type(
             return
         if message["type"] == "PING":
             await _send_json(websocket, "PONG")
+            continue
+        if message["type"] == "FRAME" and message["type"] != msg_type:
             continue
         if message["type"] == msg_type:
             raise AssertionError(f"Unexpected {msg_type} message: {message}")

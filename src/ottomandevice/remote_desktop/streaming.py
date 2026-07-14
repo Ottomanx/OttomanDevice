@@ -26,11 +26,16 @@ class DesktopStreamRunner:
         self._sequence = 0
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._immediate_capture = asyncio.Event()
         self._interval_seconds = 1.0 / settings.fps
 
     @property
     def is_running(self) -> bool:
         return self._task is not None and not self._task.done()
+
+    def request_immediate_frame(self) -> None:
+        if self.is_running:
+            self._immediate_capture.set()
 
     async def start(self, send_message: SendMessage) -> None:
         if self.is_running:
@@ -79,8 +84,26 @@ class DesktopStreamRunner:
                 logger.error("Streaming error")
                 break
 
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._interval_seconds)
+            if await self._wait_for_next_frame():
                 break
-            except asyncio.TimeoutError:
-                continue
+
+    async def _wait_for_next_frame(self) -> bool:
+        if self._immediate_capture.is_set():
+            self._immediate_capture.clear()
+            return False
+
+        interval_task = asyncio.create_task(asyncio.sleep(self._interval_seconds))
+        immediate_task = asyncio.create_task(self._immediate_capture.wait())
+        stop_task = asyncio.create_task(self._stop_event.wait())
+        done, pending = await asyncio.wait(
+            {interval_task, immediate_task, stop_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+
+        if stop_task in done:
+            return True
+        if immediate_task in done and self._immediate_capture.is_set():
+            self._immediate_capture.clear()
+        return False
