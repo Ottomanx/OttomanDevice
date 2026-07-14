@@ -27,14 +27,15 @@ from ottomandevice.remote_desktop.clipboard_sync import (
     parse_clipboard_text,
 )
 from ottomandevice.remote_desktop.file_transfer import (
-    DownloadTransfer,
+    Base64TransferTransport,
     FileTransferError,
-    FileTransferManager,
-    UploadTransfer,
-    parse_chunk_data,
-    parse_transfer_size,
+    FixedChunkSizeStrategy,
+    TransferManager,
+    TransferTransport,
     validate_relative_path,
 )
+from ottomandevice.remote_desktop.file_transfer.path_validator import parse_sha256
+from ottomandevice.remote_desktop.file_transfer.queue import TransferWorkerPool
 from ottomandevice.remote_desktop.input_injector import (
     InputInjector,
     extract_mouse_fields,
@@ -110,7 +111,8 @@ class RemoteDesktopWebSocketServer:
         input_injector: InputInjector | None = None,
         keyboard_injector: KeyboardInjector | None = None,
         clipboard_manager: ClipboardManager | None = None,
-        file_transfer_manager: FileTransferManager | None = None,
+        file_transfer_manager: TransferManager | None = None,
+        transfer_transport: TransferTransport | None = None,
         on_stream_started: Callable[[], None] | None = None,
         on_stream_stopped: Callable[[], None] | None = None,
     ) -> None:
@@ -123,10 +125,16 @@ class RemoteDesktopWebSocketServer:
         self._keyboard_injector = keyboard_injector or KeyboardInjector()
         self._clipboard_manager = clipboard_manager or ClipboardManager()
         ft_settings = settings.file_transfer
-        self._file_transfer_manager = file_transfer_manager or FileTransferManager(
+        self._transfer_transport = transfer_transport or Base64TransferTransport()
+        self._file_transfer_manager = file_transfer_manager or TransferManager(
             workspace_dir=Path(ft_settings.workspace_dir),
             max_file_size_bytes=ft_settings.max_file_size_bytes,
-            chunk_size=ft_settings.chunk_size,
+            chunk_size_strategy=FixedChunkSizeStrategy(ft_settings.chunk_size),
+            manifest_dir=Path(ft_settings.manifest_dir),
+            partial_dir=Path(ft_settings.partial_dir),
+            fsync_interval_bytes=ft_settings.fsync_interval_bytes,
+            allow_overwrite=ft_settings.allow_overwrite,
+            worker_pool=TransferWorkerPool(max_workers=ft_settings.worker_count),
         )
         self._on_stream_started = on_stream_started
         self._on_stream_stopped = on_stream_stopped
@@ -296,9 +304,8 @@ class RemoteDesktopWebSocketServer:
         keyboard_control_active = False
         clipboard_control_active = False
         file_transfer_control_active = False
-        active_uploads: dict[str, UploadTransfer] = {}
-        active_downloads: dict[str, DownloadTransfer] = {}
-        download_tasks: dict[str, asyncio.Task[Any]] = {}
+        active_upload_ids: set[str] = set()
+        download_running: dict[str, bool] = {}
 
         try:
             async for raw_message in websocket:
@@ -449,7 +456,7 @@ class RemoteDesktopWebSocketServer:
                         session,
                         stream_runner,
                         file_transfer_control_active,
-                        active_uploads,
+                        active_upload_ids,
                     )
                 elif msg_type == "FILE_DOWNLOAD":
                     await self._handle_file_download(
@@ -458,8 +465,7 @@ class RemoteDesktopWebSocketServer:
                         session,
                         stream_runner,
                         file_transfer_control_active,
-                        active_downloads,
-                        download_tasks,
+                        download_running,
                     )
                 elif msg_type == "SESSION_INFO":
                     await self._handle_session_info(send_message, session)
@@ -513,11 +519,13 @@ class RemoteDesktopWebSocketServer:
                 self._on_stream_stopped()
             heartbeat_task.cancel()
             clipboard_watch_task.cancel()
-            for task in download_tasks.values():
-                task.cancel()
-            for transfer in active_downloads.values():
-                transfer.cancelled = True
-            active_uploads.clear()
+            for transfer_id in list(download_running.keys()):
+                download_running[transfer_id] = False
+                await self._file_transfer_manager.cancel_download(transfer_id)
+            download_running.clear()
+            for transfer_id in list(active_upload_ids):
+                await self._file_transfer_manager.cancel_upload(transfer_id)
+            active_upload_ids.clear()
             try:
                 await heartbeat_task
             except asyncio.CancelledError:
@@ -939,6 +947,8 @@ class RemoteDesktopWebSocketServer:
         transferred: int,
         total: int,
         direction: str,
+        *,
+        state: str = "active",
     ) -> None:
         await send_message(
             "FILE_PROGRESS",
@@ -947,6 +957,7 @@ class RemoteDesktopWebSocketServer:
                 "transferred": transferred,
                 "total": total,
                 "direction": direction,
+                "state": state,
             },
         )
 
@@ -957,7 +968,7 @@ class RemoteDesktopWebSocketServer:
         session: RemoteDesktopSession,
         stream_runner: DesktopStreamRunner,
         file_transfer_control_active: bool,
-        active_uploads: dict[str, UploadTransfer],
+        active_upload_ids: set[str],
     ) -> None:
         if not stream_runner.is_running or not file_transfer_control_active:
             return
@@ -973,26 +984,68 @@ class RemoteDesktopWebSocketServer:
         if not isinstance(transfer_id, str) or not transfer_id:
             return
 
+        manager = self._file_transfer_manager
+        transport = self._transfer_transport
+
         if payload.get("cancel") is True:
-            upload = active_uploads.pop(transfer_id, None)
-            if upload is not None:
-                upload.cancelled = True
+            active_upload_ids.discard(transfer_id)
+            await manager.cancel_upload(transfer_id)
+            await self._send_file_error(
+                send_message,
+                transfer_id,
+                "CANCELLED",
+                "Transfer cancelled",
+            )
+            return
+
+        if payload.get("pause") is True and "path" not in payload and "chunk" not in payload:
+            try:
+                await manager.pause_upload(transfer_id)
+                session_upload = manager.get_upload(transfer_id)
+                if session_upload is not None:
+                    await self._send_file_progress(
+                        send_message,
+                        transfer_id,
+                        session_upload.transferred,
+                        session_upload.total_size,
+                        "upload",
+                        state="paused",
+                    )
+            except FileTransferError as exc:
                 await self._send_file_error(
                     send_message,
                     transfer_id,
-                    "CANCELLED",
-                    "Transfer cancelled",
+                    exc.code,
+                    exc.message,
+                )
+            return
+
+        if payload.get("resume") is True and "path" not in payload and "chunk" not in payload:
+            try:
+                session_upload = await manager.resume_upload(transfer_id)
+                active_upload_ids.add(transfer_id)
+                await self._send_file_progress(
+                    send_message,
+                    transfer_id,
+                    session_upload.transferred,
+                    session_upload.total_size,
+                    "upload",
+                    state="active",
+                )
+            except FileTransferError as exc:
+                await self._send_file_error(
+                    send_message,
+                    transfer_id,
+                    exc.code,
+                    exc.message,
                 )
             return
 
         if "chunk" in payload:
-            upload = active_uploads.get(transfer_id)
-            if upload is None or upload.cancelled:
-                return
-
-            data = parse_chunk_data(payload.get("chunk"))
+            data = transport.decode_chunk(payload.get("chunk"))
             if data is None:
-                active_uploads.pop(transfer_id, None)
+                active_upload_ids.discard(transfer_id)
+                await manager.cancel_upload(transfer_id)
                 await self._send_file_error(
                     send_message,
                     transfer_id,
@@ -1001,36 +1054,41 @@ class RemoteDesktopWebSocketServer:
                 )
                 return
 
-            if len(upload.buffer) + len(data) > upload.total_size:
-                active_uploads.pop(transfer_id, None)
+            offset = payload.get("offset")
+            parsed_offset = offset if isinstance(offset, int) and not isinstance(offset, bool) else None
+
+            try:
+                transferred, total, complete = await manager.handle_upload_chunk(
+                    transfer_id,
+                    data,
+                    offset=parsed_offset,
+                )
+            except FileTransferError as exc:
+                active_upload_ids.discard(transfer_id)
+                if exc.code != "PAUSED":
+                    await manager.cancel_upload(transfer_id)
                 await self._send_file_error(
                     send_message,
                     transfer_id,
-                    "FILE_TOO_LARGE",
-                    "Upload exceeds declared size",
+                    exc.code,
+                    exc.message,
                 )
                 return
 
-            upload.buffer.extend(data)
-            transferred = len(upload.buffer)
             await self._send_file_progress(
                 send_message,
                 transfer_id,
                 transferred,
-                upload.total_size,
+                total,
                 "upload",
             )
 
-            if transferred < upload.total_size:
+            if not complete:
                 return
 
-            active_uploads.pop(transfer_id, None)
+            active_upload_ids.discard(transfer_id)
             try:
-                await asyncio.to_thread(
-                    self._file_transfer_manager.write_file,
-                    upload.target_path,
-                    bytes(upload.buffer),
-                )
+                path, size, digest = await manager.finalize_upload(transfer_id)
             except FileTransferError as exc:
                 await self._send_file_error(
                     send_message,
@@ -1040,14 +1098,14 @@ class RemoteDesktopWebSocketServer:
                 )
                 return
 
-            await send_message(
-                "FILE_COMPLETE",
-                payload={
-                    "transfer_id": transfer_id,
-                    "path": upload.relative_path,
-                    "size": upload.total_size,
-                },
-            )
+            complete_payload: dict[str, Any] = {
+                "transfer_id": transfer_id,
+                "path": path,
+                "size": size,
+            }
+            if digest is not None:
+                complete_payload["sha256"] = digest
+            await send_message("FILE_COMPLETE", payload=complete_payload)
             return
 
         path = payload.get("path")
@@ -1055,112 +1113,24 @@ class RemoteDesktopWebSocketServer:
         if not isinstance(path, str) or size is None:
             return
 
-        relative_path = validate_relative_path(path)
-        if relative_path is None:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_PATH",
-                "Invalid file path",
-            )
+        if not isinstance(size, int) or isinstance(size, bool):
             return
 
-        parsed_size = parse_transfer_size(
-            size,
-            max_size=self._file_transfer_manager.max_file_size_bytes,
-        )
-        if parsed_size is None:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "FILE_TOO_LARGE",
-                "Invalid file size",
-            )
-            return
+        resume = payload.get("resume") is True
+        overwrite = payload.get("overwrite") is True
+        offset = payload.get("offset")
+        parsed_offset = offset if isinstance(offset, int) and not isinstance(offset, bool) else 0
+        sha256 = parse_sha256(payload.get("sha256"))
 
-        target = self._file_transfer_manager.resolve_path(relative_path)
-        if target is None:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_PATH",
-                "Invalid file path",
-            )
-            return
-
-        if transfer_id in active_uploads:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_TRANSFER",
-                "Transfer already active",
-            )
-            return
-
-        active_uploads[transfer_id] = UploadTransfer(
-            transfer_id=transfer_id,
-            relative_path=relative_path,
-            target_path=target,
-            total_size=parsed_size,
-        )
-        await self._send_file_progress(
-            send_message,
-            transfer_id,
-            0,
-            parsed_size,
-            "upload",
-        )
-
-    async def _run_file_download(
-        self,
-        send_message: Any,
-        transfer: DownloadTransfer,
-        active_downloads: dict[str, DownloadTransfer],
-    ) -> None:
-        transfer_id = transfer.transfer_id
         try:
-            data = await asyncio.to_thread(
-                self._file_transfer_manager.read_file,
-                transfer.source_path,
-            )
-            if transfer.cancelled:
-                raise FileTransferError("CANCELLED", "Transfer cancelled")
-
-            chunk_size = self._file_transfer_manager.chunk_size
-            total = len(data)
-            offset = 0
-            while offset < total:
-                if transfer.cancelled:
-                    raise FileTransferError("CANCELLED", "Transfer cancelled")
-
-                end = min(offset + chunk_size, total)
-                chunk = data[offset:end]
-                final = end >= total
-                await send_message(
-                    "FILE_DOWNLOAD",
-                    payload={
-                        "transfer_id": transfer_id,
-                        "chunk": self._file_transfer_manager.encode_chunk(chunk),
-                        "offset": offset,
-                        "final": final,
-                    },
-                )
-                offset = end
-                await self._send_file_progress(
-                    send_message,
-                    transfer_id,
-                    offset,
-                    total,
-                    "download",
-                )
-
-            await send_message(
-                "FILE_COMPLETE",
-                payload={
-                    "transfer_id": transfer_id,
-                    "path": transfer.relative_path,
-                    "size": total,
-                },
+            session_upload = await manager.initiate_upload(
+                transfer_id=transfer_id,
+                relative_path=path,
+                total_size=size,
+                sha256=sha256,
+                offset=parsed_offset,
+                resume=resume,
+                overwrite=overwrite,
             )
         except FileTransferError as exc:
             await self._send_file_error(
@@ -1169,16 +1139,17 @@ class RemoteDesktopWebSocketServer:
                 exc.code,
                 exc.message,
             )
-        except Exception:
-            file_logger.info("File download failed")
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INTERNAL_ERROR",
-                "Download failed",
-            )
-        finally:
-            active_downloads.pop(transfer_id, None)
+            return
+
+        active_upload_ids.add(transfer_id)
+        await self._send_file_progress(
+            send_message,
+            transfer_id,
+            session_upload.transferred,
+            session_upload.total_size,
+            "upload",
+            state="queued" if resume else "active",
+        )
 
     async def _handle_file_download(
         self,
@@ -1187,8 +1158,7 @@ class RemoteDesktopWebSocketServer:
         session: RemoteDesktopSession,
         stream_runner: DesktopStreamRunner,
         file_transfer_control_active: bool,
-        active_downloads: dict[str, DownloadTransfer],
-        download_tasks: dict[str, asyncio.Task[Any]],
+        download_running: dict[str, bool],
     ) -> None:
         if not stream_runner.is_running or not file_transfer_control_active:
             return
@@ -1204,14 +1174,13 @@ class RemoteDesktopWebSocketServer:
         if not isinstance(transfer_id, str) or not transfer_id:
             return
 
+        manager = self._file_transfer_manager
+        transport = self._transfer_transport
+
         if payload.get("cancel") is True:
-            transfer = active_downloads.get(transfer_id)
-            if transfer is not None:
-                transfer.cancelled = True
-            task = download_tasks.pop(transfer_id, None)
-            if task is not None:
-                task.cancel()
-            active_downloads.pop(transfer_id, None)
+            download_running[transfer_id] = False
+            await manager.cancel_download(transfer_id)
+            download_running.pop(transfer_id, None)
             await self._send_file_error(
                 send_message,
                 transfer_id,
@@ -1220,77 +1189,151 @@ class RemoteDesktopWebSocketServer:
             )
             return
 
+        if payload.get("pause") is True and "path" not in payload:
+            try:
+                await manager.pause_download(transfer_id)
+                session_download = manager.get_download(transfer_id)
+                if session_download is not None:
+                    await self._send_file_progress(
+                        send_message,
+                        transfer_id,
+                        session_download.offset,
+                        session_download.total_size,
+                        "download",
+                        state="paused",
+                    )
+            except FileTransferError as exc:
+                await self._send_file_error(
+                    send_message,
+                    transfer_id,
+                    exc.code,
+                    exc.message,
+                )
+            return
+
+        if payload.get("resume") is True and "path" not in payload:
+            try:
+                await manager.resume_download(transfer_id)
+                session_download = manager.get_download(transfer_id)
+                if session_download is not None:
+                    await self._send_file_progress(
+                        send_message,
+                        transfer_id,
+                        session_download.offset,
+                        session_download.total_size,
+                        "download",
+                        state="active",
+                    )
+            except FileTransferError as exc:
+                await self._send_file_error(
+                    send_message,
+                    transfer_id,
+                    exc.code,
+                    exc.message,
+                )
+            return
+
         path = payload.get("path")
         if not isinstance(path, str):
             return
 
-        relative_path = validate_relative_path(path)
-        if relative_path is None:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_PATH",
-                "Invalid file path",
-            )
-            return
-
-        target = self._file_transfer_manager.resolve_path(relative_path)
-        if target is None:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_PATH",
-                "Invalid file path",
-            )
-            return
-
-        if transfer_id in active_downloads:
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "INVALID_TRANSFER",
-                "Transfer already active",
-            )
-            return
-
-        if not target.is_file():
-            await self._send_file_error(
-                send_message,
-                transfer_id,
-                "NOT_FOUND",
-                "File not found",
-            )
-            return
+        resume = payload.get("resume") is True
+        offset = payload.get("offset")
+        parsed_offset = offset if isinstance(offset, int) and not isinstance(offset, bool) else 0
 
         try:
-            size = target.stat().st_size
-        except OSError:
+            session_download = await manager.initiate_download(
+                transfer_id=transfer_id,
+                relative_path=path,
+                offset=parsed_offset,
+                resume=resume,
+            )
+        except FileTransferError as exc:
             await self._send_file_error(
                 send_message,
                 transfer_id,
-                "NOT_FOUND",
-                "File not found",
+                exc.code,
+                exc.message,
             )
             return
 
-        if size > self._file_transfer_manager.max_file_size_bytes:
+        download_running[transfer_id] = True
+
+        async def on_chunk(
+            chunk_transfer_id: str,
+            chunk: bytes,
+            chunk_offset: int,
+            final: bool,
+        ) -> None:
+            await send_message(
+                "FILE_DOWNLOAD",
+                payload={
+                    "transfer_id": chunk_transfer_id,
+                    "chunk": transport.encode_chunk(chunk),
+                    "offset": chunk_offset,
+                    "final": final,
+                },
+            )
+
+        async def on_progress(
+            progress_transfer_id: str,
+            transferred: int,
+            total: int,
+            direction: str,
+        ) -> None:
+            await self._send_file_progress(
+                send_message,
+                progress_transfer_id,
+                transferred,
+                total,
+                direction,
+            )
+
+        async def on_complete(
+            complete_transfer_id: str,
+            relative_path: str,
+            total: int,
+            digest: str | None,
+        ) -> None:
+            download_running.pop(complete_transfer_id, None)
+            complete_payload: dict[str, Any] = {
+                "transfer_id": complete_transfer_id,
+                "path": relative_path,
+                "size": total,
+            }
+            if digest is not None:
+                complete_payload["sha256"] = digest
+            await send_message("FILE_COMPLETE", payload=complete_payload)
+
+        async def on_error(
+            error_transfer_id: str,
+            code: str,
+            error_message: str,
+        ) -> None:
+            download_running.pop(error_transfer_id, None)
             await self._send_file_error(
                 send_message,
-                transfer_id,
-                "FILE_TOO_LARGE",
-                "File exceeds maximum size",
+                error_transfer_id,
+                code,
+                error_message,
             )
-            return
 
-        transfer = DownloadTransfer(
-            transfer_id=transfer_id,
-            relative_path=relative_path,
-            source_path=target,
-            total_size=size,
+        await manager.queue_download(
+            session_download,
+            on_chunk=on_chunk,
+            on_progress=on_progress,
+            on_complete=on_complete,
+            on_error=on_error,
+            should_continue=lambda: download_running.get(transfer_id, False),
         )
-        active_downloads[transfer_id] = transfer
-        download_tasks[transfer_id] = asyncio.create_task(
-            self._run_file_download(send_message, transfer, active_downloads)
+
+        await self._send_file_progress(
+            send_message,
+            transfer_id,
+            session_download.offset,
+            session_download.total_size,
+            "download",
+            state="queued",
         )
 
     async def _emit_session_info(

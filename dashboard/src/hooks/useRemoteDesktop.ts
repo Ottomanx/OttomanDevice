@@ -19,12 +19,10 @@ import {
   validateClipboardText,
 } from '../utils/remoteClipboardSync'
 import {
-  assembleDownloadChunks,
-  createTransferId,
-  readFileInChunks,
-  triggerBrowserDownload,
   type FileTransferProgress,
+  type TransferHistoryEntry,
 } from '../utils/fileTransfer'
+import { RemoteFileTransferController } from '../utils/remoteFileTransfer'
 import { useRemoteDesktopStreamMetrics } from './useRemoteDesktopStreamMetrics'
 import { RemoteDesktopConnectionManager } from '../utils/remoteDesktopConnectionManager'
 import {
@@ -91,9 +89,13 @@ interface UseRemoteDesktopResult {
   pasteRemoteClipboardLocally: () => Promise<void>
   clearClipboardNotification: () => void
   fileTransferProgress: FileTransferProgress | null
+  transferHistory: TransferHistoryEntry[]
   uploadFile: (relativePath: string, file: File) => Promise<void>
   downloadFile: (relativePath: string) => Promise<void>
   cancelFileTransfer: (transferId: string) => void
+  pauseFileTransfer: (transferId: string) => void
+  resumeFileTransfer: (transferId: string) => void
+  retryFileTransfer: (transferId: string) => void
   streamPerformance: StreamPerformanceSnapshot
   streamHealth: StreamHealth
   isFrozenFrame: boolean
@@ -203,14 +205,13 @@ export function useRemoteDesktop(
   const [fileTransferProgress, setFileTransferProgress] = useState<FileTransferProgress | null>(
     null,
   )
+  const [transferHistory, setTransferHistory] = useState<TransferHistoryEntry[]>([])
 
   const managerRef = useRef<RemoteDesktopConnectionManager | null>(null)
   const deviceIdRef = useRef(deviceId)
   const hasAuthenticatedRef = useRef(false)
   const clipboardRequestRef = useRef<((text: string) => void) | null>(null)
-  const activeTransferIdRef = useRef<string | null>(null)
-  const downloadChunksRef = useRef<Map<string, Map<number, string>>>(new Map())
-  const downloadPathsRef = useRef<Map<string, string>>(new Map())
+  const fileTransferControllerRef = useRef<RemoteFileTransferController | null>(null)
   const outboundSeqRef = useRef(0)
   const frameObjectUrlRef = useRef<string | null>(null)
   const [reconnectCount, setReconnectCount] = useState(0)
@@ -242,10 +243,9 @@ export function useRemoteDesktop(
 
   const resetTransferState = useCallback(() => {
     clipboardRequestRef.current = null
-    activeTransferIdRef.current = null
-    downloadChunksRef.current.clear()
-    downloadPathsRef.current.clear()
+    fileTransferControllerRef.current?.reset()
     setFileTransferProgress(null)
+    setTransferHistory([])
   }, [])
 
   const enterFallback = useCallback(() => {
@@ -481,22 +481,44 @@ export function useRemoteDesktop(
     remoteControlActive,
   ])
 
+  const getFileTransferController = useCallback(() => {
+    if (!fileTransferControllerRef.current) {
+      const controller = new RemoteFileTransferController(sendMessage)
+      controller.onProgressChange = setFileTransferProgress
+      controller.onHistoryChange = setTransferHistory
+      fileTransferControllerRef.current = controller
+    } else {
+      fileTransferControllerRef.current.setSendMessage(sendMessage)
+    }
+    return fileTransferControllerRef.current
+  }, [sendMessage])
+
   const cancelFileTransfer = useCallback(
     (transferId: string) => {
-      if (activeTransferIdRef.current === transferId) {
-        activeTransferIdRef.current = null
-      }
-      sendMessage('FILE_UPLOAD', { transfer_id: transferId, cancel: true })
-      sendMessage('FILE_DOWNLOAD', { transfer_id: transferId, cancel: true })
-      downloadChunksRef.current.delete(transferId)
-      downloadPathsRef.current.delete(transferId)
-      setFileTransferProgress((current) =>
-        current?.transferId === transferId
-          ? { ...current, status: 'cancelled' }
-          : current,
-      )
+      getFileTransferController().cancelTransfer(transferId)
     },
-    [sendMessage],
+    [getFileTransferController],
+  )
+
+  const pauseFileTransfer = useCallback(
+    (transferId: string) => {
+      getFileTransferController().pauseTransfer(transferId)
+    },
+    [getFileTransferController],
+  )
+
+  const resumeFileTransfer = useCallback(
+    (transferId: string) => {
+      getFileTransferController().resumeTransfer(transferId)
+    },
+    [getFileTransferController],
+  )
+
+  const retryFileTransfer = useCallback(
+    (transferId: string) => {
+      getFileTransferController().retryTransfer(transferId)
+    },
+    [getFileTransferController],
   )
 
   const uploadFile = useCallback(
@@ -504,32 +526,9 @@ export function useRemoteDesktop(
       if (!remoteControlActive) {
         throw new Error('Remote desktop is not active')
       }
-
-      const transferId = createTransferId()
-      activeTransferIdRef.current = transferId
-      setFileTransferProgress({
-        transferId,
-        direction: 'upload',
-        transferred: 0,
-        total: file.size,
-        path: relativePath,
-        status: 'active',
-      })
-
-      sendMessage('FILE_UPLOAD', {
-        transfer_id: transferId,
-        path: relativePath,
-        size: file.size,
-      })
-
-      await readFileInChunks(file, async (chunk) => {
-        if (activeTransferIdRef.current !== transferId) {
-          return
-        }
-        sendMessage('FILE_UPLOAD', { transfer_id: transferId, chunk })
-      })
+      await getFileTransferController().uploadFile(relativePath, file)
     },
-    [remoteControlActive, sendMessage],
+    [getFileTransferController, remoteControlActive],
   )
 
   const downloadFile = useCallback(
@@ -537,26 +536,9 @@ export function useRemoteDesktop(
       if (!remoteControlActive) {
         throw new Error('Remote desktop is not active')
       }
-
-      const transferId = createTransferId()
-      activeTransferIdRef.current = transferId
-      downloadChunksRef.current.set(transferId, new Map())
-      downloadPathsRef.current.set(transferId, relativePath)
-      setFileTransferProgress({
-        transferId,
-        direction: 'download',
-        transferred: 0,
-        total: 0,
-        path: relativePath,
-        status: 'active',
-      })
-
-      sendMessage('FILE_DOWNLOAD', {
-        transfer_id: transferId,
-        path: relativePath,
-      })
+      getFileTransferController().downloadFile(relativePath)
     },
-    [remoteControlActive, sendMessage],
+    [getFileTransferController, remoteControlActive],
   )
 
   const handleUnexpectedDisconnect = useCallback(() => {
@@ -707,115 +689,17 @@ export function useRemoteDesktop(
           void applyRemoteClipboardChange(text)
           break
         }
-        case 'FILE_PROGRESS': {
-          const transferId =
-            typeof payload.transfer_id === 'string' ? payload.transfer_id : null
-          if (!transferId) {
-            break
-          }
-          const transferred =
-            typeof payload.transferred === 'number' ? payload.transferred : 0
-          const total = typeof payload.total === 'number' ? payload.total : 0
-          const direction = payload.direction === 'download' ? 'download' : 'upload'
-          setFileTransferProgress((current) => {
-            if (current?.transferId !== transferId) {
-              return {
-                transferId,
-                direction,
-                transferred,
-                total,
-                path: downloadPathsRef.current.get(transferId) ?? '',
-                status: 'active',
-              }
-            }
-            return {
-              ...current,
-              transferred,
-              total,
-              direction,
-              status: 'active',
-            }
-          })
-          break
-        }
-        case 'FILE_COMPLETE': {
-          const transferId =
-            typeof payload.transfer_id === 'string' ? payload.transfer_id : null
-          if (!transferId) {
-            break
-          }
-          const path = typeof payload.path === 'string' ? payload.path : ''
-          const size = typeof payload.size === 'number' ? payload.size : 0
-          if (activeTransferIdRef.current === transferId) {
-            activeTransferIdRef.current = null
-          }
-          setFileTransferProgress({
-            transferId,
-            direction:
-              downloadPathsRef.current.has(transferId) &&
-              downloadChunksRef.current.has(transferId)
-                ? 'download'
-                : 'upload',
-            transferred: size,
-            total: size,
-            path,
-            status: 'complete',
-          })
-          downloadChunksRef.current.delete(transferId)
-          downloadPathsRef.current.delete(transferId)
-          break
-        }
-        case 'FILE_ERROR': {
-          const transferId =
-            typeof payload.transfer_id === 'string' ? payload.transfer_id : null
-          const code = typeof payload.code === 'string' ? payload.code : 'ERROR'
-          const errorMessage =
-            typeof payload.message === 'string' ? payload.message : 'Transfer failed'
-          if (transferId && activeTransferIdRef.current === transferId) {
-            activeTransferIdRef.current = null
-          }
-          if (transferId) {
-            downloadChunksRef.current.delete(transferId)
-            downloadPathsRef.current.delete(transferId)
-          }
-          setFileTransferProgress((current) =>
-            transferId && current?.transferId === transferId
-              ? {
-                  ...current,
-                  status: code === 'CANCELLED' ? 'cancelled' : 'error',
-                  errorMessage,
-                }
-              : current,
-          )
-          break
-        }
+        case 'FILE_PROGRESS':
+        case 'FILE_COMPLETE':
+        case 'FILE_ERROR':
         case 'FILE_DOWNLOAD': {
-          const transferId =
-            typeof payload.transfer_id === 'string' ? payload.transfer_id : null
-          const chunk = typeof payload.chunk === 'string' ? payload.chunk : null
-          const offset = typeof payload.offset === 'number' ? payload.offset : 0
-          const isFinal = payload.final === true
-          if (!transferId || !chunk) {
-            break
-          }
-
-          const chunks = downloadChunksRef.current.get(transferId) ?? new Map()
-          chunks.set(offset, chunk)
-          downloadChunksRef.current.set(transferId, chunks)
-
-          if (!isFinal) {
-            break
-          }
-
-          const relativePath = downloadPathsRef.current.get(transferId) ?? 'download'
-          const data = assembleDownloadChunks(chunks)
-          const filename = relativePath.split('/').pop() || 'download'
-          triggerBrowserDownload(filename, data)
+          getFileTransferController().handleMessage(message.type, payload)
           break
         }
         case 'START_STREAM': {
           if (payload.streaming === true) {
             manager.markConnected()
+            getFileTransferController().resumePendingAfterReconnect()
           }
           break
         }
@@ -863,7 +747,7 @@ export function useRemoteDesktop(
           break
       }
     },
-    [applyRemoteClipboardChange, enterFallback, sendMessage],
+    [applyRemoteClipboardChange, enterFallback, getFileTransferController, sendMessage],
   )
 
   const enterFallbackRef = useRef(enterFallback)
@@ -1000,9 +884,13 @@ export function useRemoteDesktop(
     pasteRemoteClipboardLocally,
     clearClipboardNotification,
     fileTransferProgress,
+    transferHistory,
     uploadFile,
     downloadFile,
     cancelFileTransfer,
+    pauseFileTransfer,
+    resumeFileTransfer,
+    retryFileTransfer,
     streamPerformance,
     streamHealth: streamPerformance.health,
     isFrozenFrame,

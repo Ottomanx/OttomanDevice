@@ -1,4 +1,9 @@
-import { useRef, useState } from 'react'
+from pathlib import Path
+
+OUT = Path(__file__).resolve().parents[1] / "dashboard" / "src" / "components" / "FileTransferPanel.tsx"
+
+OUT.write_text(
+    r"""import { useRef, useState } from 'react'
 
 import {
   formatEta,
@@ -253,3 +258,7 @@ export function FileTransferPanel({
     </div>
   )
 }
+""",
+    encoding="utf-8",
+)
+print("wrote", OUT.name)

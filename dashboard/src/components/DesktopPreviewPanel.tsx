@@ -121,9 +121,13 @@ export function DesktopPreviewPanel({
     pasteRemoteClipboardLocally,
     clearClipboardNotification,
     fileTransferProgress,
+    transferHistory,
     uploadFile,
     downloadFile,
     cancelFileTransfer,
+    pauseFileTransfer,
+    resumeFileTransfer,
+    retryFileTransfer,
     streamPerformance,
     streamHealth,
     isFrozenFrame,
@@ -556,9 +560,13 @@ export function DesktopPreviewPanel({
       <FileTransferPanel
         enabled={fileTransferActive}
         progress={fileTransferProgress}
+        history={transferHistory}
         onUpload={uploadFile}
         onDownload={downloadFile}
         onCancel={cancelFileTransfer}
+        onPause={pauseFileTransfer}
+        onResume={resumeFileTransfer}
+        onRetry={retryFileTransfer}
       />
 
       {(isControlledByOther ||

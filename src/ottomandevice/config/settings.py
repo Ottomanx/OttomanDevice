@@ -78,6 +78,11 @@ class FileTransferSettings:
     workspace_dir: str
     max_file_size_bytes: int
     chunk_size: int
+    partial_dir: str = "data/transfers/partials"
+    manifest_dir: str = "data/transfers/manifests"
+    fsync_interval_bytes: int = 4194304
+    worker_count: int = 2
+    allow_overwrite: bool = False
 
 
 @dataclass(frozen=True)
@@ -119,6 +124,11 @@ class Settings:
                 "workspace_dir": "data/workspace",
                 "max_file_size_bytes": 104857600,
                 "chunk_size": 65536,
+                "partial_dir": "data/transfers/partials",
+                "manifest_dir": "data/transfers/manifests",
+                "fsync_interval_bytes": 4194304,
+                "worker_count": 2,
+                "allow_overwrite": False,
             },
         )
         return cls(
